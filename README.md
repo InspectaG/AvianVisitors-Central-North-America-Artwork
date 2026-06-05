@@ -1,106 +1,178 @@
-# AvianVisitors
+# Avian Visitors
 
-*A live bird collage from your window.*
+A BirdNET-Pi display that turns recent detections into an illustrated bird collage.
 
-See it running at [bird.onethreenine.net](https://bird.onethreenine.net).
+This is a fork of the [Twarner491/AvianVisitors](https://github.com/Twarner491/AvianVisitors) awesome project. The original README is saved as [`README.upstream.md`](README.upstream.md). This fork keeps the local Pi display, but adds a public-facing mirror that is safe to show and share outside your home network. It also adds a Central Florida 34-bird art pack, and improves UI layout on phone screens locally and on the public mirror.
 
-<img alt="avianvisitors collage" src="docs/thumb.png" />
+## What changed
 
----
+- Added a public-facing mirror, including a [`netlify-mirror`](netlify-mirror) package for easy deployment on Netlify. Non-Netlify setup notes are also included below.
+- Added a 34-species illustration pack for birds common around Central Florida. The new cutouts are in [`avian/assets/illustrations`](avian/assets/illustrations), with matching sizing data in the frontend.
+- Tuned the mobile collage so small sets of birds sit together more naturally on narrow screens.
+- Reworked the mobile stats view so the timeline has room for rotated names and does not crowd the tables below it.
 
-## BOM
+The 34-species Central Florida pack includes, in eBird taxonomic order:
 
-| Qty | Description | Price | Link | Notes |
-|-----|-------------|-------|------| ----- |
-| 1 | Raspberry Pi (4B / 5 / Zero 2W) | ~$35-80 | [Raspberry Pi](https://www.raspberrypi.com/products/) | [See note for RPi20](https://github.com/mcguirepr89/BirdNET-Pi/wiki/RPi0W2-Installation-Guide) |
-| 1 | Micro SD Card (≥32 GB) | ~$10 | [Amazon](https://www.amazon.com/s?k=32gb+micro+sd+card&i=electronics&crid=1RCJAD1J0EPDX&sprefix=32gb+micro+sd+card%2Celectronics%2C226&ref=nb_sb_noss_1) | |
-| 1 | USB lavalier microphone | $16.95 | [Amazon](https://www.amazon.com/dp/B0176NRE1G) | |
-| 1 | Pi power supply | ~$10 | - | |
+- Black-bellied Whistling-Duck
+- Common Gallinule
+- American Coot
+- Limpkin
+- Sandhill Crane
+- Wilson's Snipe
+- Lesser Yellowlegs
+- Greater Yellowlegs
+- Least Sandpiper
+- Wood Stork
+- Anhinga
+- White Ibis
+- Glossy Ibis
+- Tricolored Heron
+- Swallow-tailed Kite
+- Red-bellied Woodpecker
+- Eastern Phoebe
+- Great Crested Flycatcher
+- White-eyed Vireo
+- Red-eyed Vireo
+- Blue Jay
+- Fish Crow
+- Carolina Chickadee
+- Tufted Titmouse
+- Gray Catbird
+- Brown Thrasher
+- Eastern Bluebird
+- Eastern Meadowlark
+- Common Grackle
+- Boat-tailed Grackle
+- Northern Parula
+- Yellow-throated Warbler
+- Prairie Warbler
+- Northern Cardinal
 
-Optional: a [Gemini API key](https://aistudio.google.com/apikey) to restyle illustrations, an [eBird API key](https://ebird.org/api/keygen) to filter species by region.
+## Local Pi display
 
----
-
-## 1. Flash the SD card
-
-Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/). Pick Raspberry Pi OS Lite (64-bit). In the customisation dialog set:
-
-- Username
-- WiFi SSID + password
-- Hostname: `birdnet`
-- Enable SSH with password auth
-
-Plug the USB mic into the Pi. Place the capsule in a window or mount it outside. Boot.
-
----
-
-## 2. Run the installer
-
-Installer assumes passwordless sudo (Raspberry Pi OS Lite default - if you've tightened it, run `sudo raspi-config` -> *System Options* -> restore the default first).
+Install the same way as the upstream project, but point the installer at your fork once you publish it:
 
 ```bash
 ssh <your-username>@birdnet.local
-curl -s https://raw.githubusercontent.com/Twarner491/AvianVisitors/avian-visitors/newinstaller.sh | bash
+curl -s https://raw.githubusercontent.com/YOUR_GITHUB_USER/AvianVisitors/main/newinstaller.sh | bash
 ```
 
-Clones this fork, installs BirdNET-Pi, symlinks the AvianVisitors overlay into the Caddy web root. Takes 20-40 minutes. Reboots when done.
+After the Pi reboots:
 
-Collage: `http://birdnet.local/`. Stock BirdNET-Pi UI: `http://birdnet.local/index.php`. The menu button in the top right opens an admin overlay with settings, system, log, and tool panels.
+- Collage UI: `http://birdnet.local/`
+- Stock BirdNET-Pi UI: `http://birdnet.local/index.php`
 
----
+The local Pi version keeps the menu and admin tools because it is meant for your LAN.
 
-## 3. (Optional) Restyle the illustrations
+## Public mirror
 
-The repo ships with 450 bundled illustrations. To restyle or add region-specific species:
+The public mirror is for friends and family. The included implementation uses Netlify. It serves the same collage, stats, and atlas views, but it does not expose the Pi itself.
+
+Public mirror behavior:
+
+- The menu button is hidden.
+- Admin routes are blocked in the browser.
+- The Netlify `menu.php` shim returns no menu items.
+- Private endpoints such as recordings, spectrograms, config, and Pi status return `404`.
+- Bird audio is not mirrored.
+- Updates arrive only when the Pi posts a snapshot. If the Pi is unplugged, the Netlify site keeps showing the last snapshot and stops changing.
+
+### Mirror setup
+
+In Netlify, set this environment variable:
 
 ```bash
-export GEMINI_API_KEY='your-key'
-
-# Re-render every species in BirdNET-Pi's model:
-python3 ~/BirdNET-Pi/avian/scripts/pregen.py --labels ~/BirdNET-Pi/model/labels.txt --force
-
-# Or filter to species observed in your eBird region:
-export EBIRD_API_KEY='your-key'
-python3 ~/BirdNET-Pi/avian/scripts/pregen.py \
-  --labels ~/BirdNET-Pi/model/labels.txt \
-  --ebird-region US-CA
+AVIAN_MIRROR_PUSH_TOKEN=replace-with-a-long-random-token
 ```
 
-Style lives in [`avian/scripts/prompt.template.md`](avian/scripts/prompt.template.md). Edit, re-run with `--force`.
+Then update these placeholders:
 
----
+- [`netlify-mirror/public/index.html`](netlify-mirror/public/index.html): replace `YOUR_NETLIFY_SITE` and `[insert your location]`.
+- [`netlify-mirror/scripts/avian-mirror-export.py`](netlify-mirror/scripts/avian-mirror-export.py): replace `YOUR_NETLIFY_SITE`, or set `AVIAN_MIRROR_INGEST_URL` on the Pi.
+- [`netlify-mirror/netlify/functions/wiki.mts`](netlify-mirror/netlify/functions/wiki.mts): replace `YOUR_NETLIFY_SITE` in the user agent.
 
-## 4. (Optional) Forward off your LAN
+Build check:
 
-See [`avian/forwarding/`](avian/forwarding/) for three independent recipes:
+```bash
+cd netlify-mirror
+npm install
+npm run build
+```
 
-- **Cloudflare Tunnel** for a public HTTPS URL.
-- **Home Assistant REST sensor** that exposes the latest detection.
-- **MQTT bridge** that publishes every new detection.
+Deploy only after the placeholders and token are set:
 
----
+```bash
+netlify deploy --prod --dir=public
+```
+
+### First Pi push
+
+Copy the mirror scripts to the Pi:
+
+```bash
+scp netlify-mirror/scripts/avian-mirror-export.py birdnet.local:~/BirdNET-Pi/scripts/
+scp netlify-mirror/scripts/avian-mirror-watch-push.sh birdnet.local:~/BirdNET-Pi/scripts/
+```
+
+Create `~/.avian-visitors-mirror.env` on the Pi:
+
+```bash
+AVIAN_MIRROR_PUSH_TOKEN=replace-with-the-same-token
+AVIAN_MIRROR_INGEST_URL=https://YOUR_NETLIFY_SITE.netlify.app/api/mirror/ingest
+```
+
+Post one snapshot:
+
+```bash
+ssh birdnet.local
+source ~/.avian-visitors-mirror.env
+python3 ~/BirdNET-Pi/scripts/avian-mirror-export.py --post
+```
+
+For ongoing updates, run `avian-mirror-watch-push.sh` under systemd or another process supervisor. The watcher waits briefly after the database changes, then posts a fresh snapshot.
+
+### Using another host
+
+The mirror is not tied to Netlify. Netlify is just the implementation included here. To run the mirror on another host, serve [`netlify-mirror/public`](netlify-mirror/public) as the static site and provide these routes:
+
+- `GET /avian/api/birdnet-api.php?action=stats`
+- `GET /avian/api/birdnet-api.php?action=lifelist`
+- `GET /avian/api/birdnet-api.php?action=timeseries`
+- `GET /avian/api/birdnet-api.php?action=firstseen`
+- `GET /avian/api/birdnet-api.php?action=recent&hours=24`
+- `GET /avian/api/birdnet-api.php?action=species&sci=Cardinalis%20cardinalis`
+- `POST /api/mirror/ingest`
+- `GET /avian/api/cutout.php?sci=Cardinalis%20cardinalis`
+- `GET /avian/api/menu.php`
+- `GET /avian/api/wiki.php?sci=Cardinalis%20cardinalis`
+
+The checked-in Netlify functions are the reference implementation. A Cloudflare Pages Functions, Vercel Functions, small VPS, or other backend can use the same pattern:
+
+- Store the latest snapshot posted by the Pi.
+- Read from that snapshot for the `birdnet-api.php` actions.
+- Redirect `cutout.php` to the matching PNG in `/avian/assets/illustrations/`.
+- Return `{ "items": [] }` from `menu.php`.
+- Return `404` for private routes such as recordings, spectrograms, config, and Pi status.
+- Keep `POST /api/mirror/ingest` token-protected.
+
+Pure static hosts need one extra adapter because there is nowhere to receive the Pi's snapshot post or answer the API routes. For those, publish the snapshot JSON yourself and adjust the frontend to read that file directly.
 
 ## Repo layout
 
-```
-avian/                  # everything we add to BirdNET-Pi
-├── frontend/           # static HTML/JS/CSS for the collage
-├── assets/             # 450 bundled illustrations + cutouts + masks
-├── api/                # PHP shims served by BirdNET-Pi's PHP-FPM
-├── scripts/            # pregen.py + editable prompt template
-└── forwarding/         # optional HA / MQTT / Cloudflare configs
-```
+```text
+avian/
+  frontend/       Local BirdNET-Pi collage UI
+  assets/         Bird illustrations, cutouts, and sizing data
+  api/            PHP shims served by BirdNET-Pi
+  scripts/        Illustration-generation helpers
+  forwarding/     Optional forwarding recipes from upstream
 
-Everything outside `avian/` is upstream BirdNET-Pi.
-
----
+netlify-mirror/
+  public/         Public static UI and seed snapshot
+  netlify/        Read-only API functions and snapshot ingest
+  scripts/        Pi-side snapshot export and watcher scripts
+```
 
 ## License
 
-CC-BY-NC-SA-4.0, inherited from [BirdNET-Pi](https://github.com/Nachtzuster/BirdNET-Pi/blob/main/LICENSE). Non-commercial use only. See the [BirdNET-Pi README](https://github.com/Nachtzuster/BirdNET-Pi/blob/main/README.md) for full Cornell attribution.
-
----
-
-- [Fork this repository](https://github.com/Twarner491/AvianVisitors/fork)
-- [Watch this repo](https://github.com/Twarner491/AvianVisitors/subscription)
-- [Create issue](https://github.com/Twarner491/AvianVisitors/issues/new)
+This fork keeps the upstream license: CC-BY-NC-SA-4.0, inherited from [BirdNET-Pi](https://github.com/Nachtzuster/BirdNET-Pi/blob/main/LICENSE). Non-commercial use only.

@@ -1,0 +1,318 @@
+{
+  "schema": "avianvisitors.snapshot.v1",
+  "generated_at": "2026-01-01T08:00:00-05:00",
+  "stats": {
+    "totals": {
+      "detections": 12,
+      "species": 4
+    },
+    "today": {
+      "detections": 12,
+      "species": 4
+    },
+    "last_hour": {
+      "detections": 3
+    },
+    "week": {
+      "detections": 12,
+      "species": 4
+    },
+    "started": "2026-01-01",
+    "as_of": "2026-01-01T08:00:00-05:00"
+  },
+  "lifelist": {
+    "species": [
+      {
+        "sci": "Cardinalis cardinalis",
+        "com": "Northern Cardinal",
+        "first_seen": "2026-01-01 06:58:10",
+        "last_seen": "2026-01-01 07:42:20",
+        "n": 4,
+        "best_conf": 0.91
+      },
+      {
+        "sci": "Cyanocitta cristata",
+        "com": "Blue Jay",
+        "first_seen": "2026-01-01 07:04:33",
+        "last_seen": "2026-01-01 07:55:11",
+        "n": 3,
+        "best_conf": 0.84
+      },
+      {
+        "sci": "Thryothorus ludovicianus",
+        "com": "Carolina Wren",
+        "first_seen": "2026-01-01 07:18:41",
+        "last_seen": "2026-01-01 07:50:05",
+        "n": 3,
+        "best_conf": 0.88
+      },
+      {
+        "sci": "Elanoides forficatus",
+        "com": "Swallow-tailed Kite",
+        "first_seen": "2026-01-01 07:36:02",
+        "last_seen": "2026-01-01 07:36:02",
+        "n": 2,
+        "best_conf": 0.78
+      }
+    ],
+    "as_of": "2026-01-01T08:00:00-05:00"
+  },
+  "recent": {
+    "1": {
+      "hours": 1,
+      "species": [
+        {
+          "sci": "Cyanocitta cristata",
+          "com": "Blue Jay",
+          "n": 2,
+          "best_conf": 0.84,
+          "last_seen": "2026-01-01 07:55:11"
+        },
+        {
+          "sci": "Thryothorus ludovicianus",
+          "com": "Carolina Wren",
+          "n": 1,
+          "best_conf": 0.88,
+          "last_seen": "2026-01-01 07:50:05"
+        }
+      ],
+      "as_of": "2026-01-01T08:00:00-05:00"
+    },
+    "12": {
+      "hours": 12,
+      "species": [
+        {
+          "sci": "Cyanocitta cristata",
+          "com": "Blue Jay",
+          "n": 3,
+          "best_conf": 0.84,
+          "last_seen": "2026-01-01 07:55:11"
+        },
+        {
+          "sci": "Thryothorus ludovicianus",
+          "com": "Carolina Wren",
+          "n": 3,
+          "best_conf": 0.88,
+          "last_seen": "2026-01-01 07:50:05"
+        },
+        {
+          "sci": "Cardinalis cardinalis",
+          "com": "Northern Cardinal",
+          "n": 4,
+          "best_conf": 0.91,
+          "last_seen": "2026-01-01 07:42:20"
+        },
+        {
+          "sci": "Elanoides forficatus",
+          "com": "Swallow-tailed Kite",
+          "n": 2,
+          "best_conf": 0.78,
+          "last_seen": "2026-01-01 07:36:02"
+        }
+      ],
+      "as_of": "2026-01-01T08:00:00-05:00"
+    },
+    "24": {
+      "hours": 24,
+      "species": [
+        {
+          "sci": "Cyanocitta cristata",
+          "com": "Blue Jay",
+          "n": 3,
+          "best_conf": 0.84,
+          "last_seen": "2026-01-01 07:55:11"
+        },
+        {
+          "sci": "Thryothorus ludovicianus",
+          "com": "Carolina Wren",
+          "n": 3,
+          "best_conf": 0.88,
+          "last_seen": "2026-01-01 07:50:05"
+        },
+        {
+          "sci": "Cardinalis cardinalis",
+          "com": "Northern Cardinal",
+          "n": 4,
+          "best_conf": 0.91,
+          "last_seen": "2026-01-01 07:42:20"
+        },
+        {
+          "sci": "Elanoides forficatus",
+          "com": "Swallow-tailed Kite",
+          "n": 2,
+          "best_conf": 0.78,
+          "last_seen": "2026-01-01 07:36:02"
+        }
+      ],
+      "as_of": "2026-01-01T08:00:00-05:00"
+    },
+    "168": {
+      "hours": 168,
+      "species": [
+        {
+          "sci": "Cyanocitta cristata",
+          "com": "Blue Jay",
+          "n": 3,
+          "best_conf": 0.84,
+          "last_seen": "2026-01-01 07:55:11"
+        },
+        {
+          "sci": "Thryothorus ludovicianus",
+          "com": "Carolina Wren",
+          "n": 3,
+          "best_conf": 0.88,
+          "last_seen": "2026-01-01 07:50:05"
+        },
+        {
+          "sci": "Cardinalis cardinalis",
+          "com": "Northern Cardinal",
+          "n": 4,
+          "best_conf": 0.91,
+          "last_seen": "2026-01-01 07:42:20"
+        },
+        {
+          "sci": "Elanoides forficatus",
+          "com": "Swallow-tailed Kite",
+          "n": 2,
+          "best_conf": 0.78,
+          "last_seen": "2026-01-01 07:36:02"
+        }
+      ],
+      "as_of": "2026-01-01T08:00:00-05:00"
+    },
+    "1000000": {
+      "hours": 1000000,
+      "species": [
+        {
+          "sci": "Cyanocitta cristata",
+          "com": "Blue Jay",
+          "n": 3,
+          "best_conf": 0.84,
+          "last_seen": "2026-01-01 07:55:11"
+        },
+        {
+          "sci": "Thryothorus ludovicianus",
+          "com": "Carolina Wren",
+          "n": 3,
+          "best_conf": 0.88,
+          "last_seen": "2026-01-01 07:50:05"
+        },
+        {
+          "sci": "Cardinalis cardinalis",
+          "com": "Northern Cardinal",
+          "n": 4,
+          "best_conf": 0.91,
+          "last_seen": "2026-01-01 07:42:20"
+        },
+        {
+          "sci": "Elanoides forficatus",
+          "com": "Swallow-tailed Kite",
+          "n": 2,
+          "best_conf": 0.78,
+          "last_seen": "2026-01-01 07:36:02"
+        }
+      ],
+      "as_of": "2026-01-01T08:00:00-05:00"
+    }
+  },
+  "timeseries": {
+    "days": 30,
+    "daily": [
+      {
+        "date": "2026-01-01",
+        "detections": 12,
+        "species": 4
+      }
+    ],
+    "by_hour": [
+      {
+        "hour": 6,
+        "detections": 1
+      },
+      {
+        "hour": 7,
+        "detections": 11
+      }
+    ],
+    "as_of": "2026-01-01T08:00:00-05:00"
+  },
+  "firstseen": {
+    "species": [
+      {
+        "sci": "Elanoides forficatus",
+        "com": "Swallow-tailed Kite",
+        "first_seen": "2026-01-01 07:36:02",
+        "total": 2
+      },
+      {
+        "sci": "Thryothorus ludovicianus",
+        "com": "Carolina Wren",
+        "first_seen": "2026-01-01 07:18:41",
+        "total": 3
+      },
+      {
+        "sci": "Cyanocitta cristata",
+        "com": "Blue Jay",
+        "first_seen": "2026-01-01 07:04:33",
+        "total": 3
+      },
+      {
+        "sci": "Cardinalis cardinalis",
+        "com": "Northern Cardinal",
+        "first_seen": "2026-01-01 06:58:10",
+        "total": 4
+      }
+    ],
+    "as_of": "2026-01-01T08:00:00-05:00"
+  },
+  "species": {
+    "Cardinalis cardinalis": {
+      "sci": "Cardinalis cardinalis",
+      "summary": {
+        "com": "Northern Cardinal",
+        "total": 4,
+        "first_seen": "2026-01-01 06:58:10",
+        "last_seen": "2026-01-01 07:42:20",
+        "best_conf": 0.91
+      },
+      "detections": [],
+      "audio_private": true
+    },
+    "Cyanocitta cristata": {
+      "sci": "Cyanocitta cristata",
+      "summary": {
+        "com": "Blue Jay",
+        "total": 3,
+        "first_seen": "2026-01-01 07:04:33",
+        "last_seen": "2026-01-01 07:55:11",
+        "best_conf": 0.84
+      },
+      "detections": [],
+      "audio_private": true
+    },
+    "Thryothorus ludovicianus": {
+      "sci": "Thryothorus ludovicianus",
+      "summary": {
+        "com": "Carolina Wren",
+        "total": 3,
+        "first_seen": "2026-01-01 07:18:41",
+        "last_seen": "2026-01-01 07:50:05",
+        "best_conf": 0.88
+      },
+      "detections": [],
+      "audio_private": true
+    },
+    "Elanoides forficatus": {
+      "sci": "Elanoides forficatus",
+      "summary": {
+        "com": "Swallow-tailed Kite",
+        "total": 2,
+        "first_seen": "2026-01-01 07:36:02",
+        "last_seen": "2026-01-01 07:36:02",
+        "best_conf": 0.78
+      },
+      "detections": [],
+      "audio_private": true
+    }
+  }
+}
