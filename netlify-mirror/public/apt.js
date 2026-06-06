@@ -2,7 +2,7 @@
   var PLACEHOLDER = [{"sci":"Calypte anna","com":"Anna's Hummingbird","featured":true},{"sci":"Passer domesticus","com":"House Sparrow"},{"sci":"Haemorhous mexicanus","com":"House Finch"},{"sci":"Turdus migratorius","com":"American Robin"},{"sci":"Zenaida macroura","com":"Mourning Dove"},{"sci":"Spinus psaltria","com":"Lesser Goldfinch"},{"sci":"Zonotrichia leucophrys","com":"White-crowned Sparrow"},{"sci":"Aphelocoma californica","com":"California Scrub-Jay"},{"sci":"Mimus polyglottos","com":"Northern Mockingbird"},{"sci":"Sayornis nigricans","com":"Black Phoebe"},{"sci":"Larus occidentalis","com":"Western Gull"},{"sci":"Corvus brachyrhynchos","com":"American Crow"}];
   // Bumped whenever the offline sketch build changes, so the browser
   // doesn't keep a stale cache after we regenerate the sketches.
-  var SKETCH_VERSION = '10'; // vireo orientation + collage flight-pose assets.
+  var SKETCH_VERSION = '11'; // collage flight-pose sizing compensation.
   // Cache-bust for /api/img - bump whenever a bird gets re-rendered via
   // /api/regen or whenever you need every CF DC to drop its cached copy.
   // Cloudflare keys on the full URL incl. query, so bumping this is
@@ -209,6 +209,13 @@
     'buteo-lineatus': 2,
     'pandion-haliaetus': 2
   };
+  // Flight silhouettes are much sparser than compact perched assets.
+  // Scale their collage rectangles so visible bird area still tracks
+  // call count and one-call floor sizing.
+  var COLLAGE_AREA_SCALE = {
+    'buteo-lineatus-2': 2.6,
+    'pandion-haliaetus-2': 2.0
+  };
   function collagePose(sci) {
     return COLLAGE_POSES[slugify(sci)] || 1;
   }
@@ -220,6 +227,9 @@
   function aspectForKey(key) {
     var d = DIMS[key];
     return d ? d[0] / d[1] : 1.4;
+  }
+  function areaScaleForKey(key) {
+    return COLLAGE_AREA_SCALE[key] || 1;
   }
 
   // Mask-aware nester. tiles: { fullW, fullH, mask, data }. Returns the
@@ -372,10 +382,12 @@
       if (!mask) return null;
       var n = +s.n; if (!n || isNaN(n)) n = 1;
       var sizeN = collageSizingCount(n);
+      var areaScale = areaScaleForKey(assetKey);
       return {
         mask: mask, data: s,
         ar: aspectForKey(assetKey),
-        score: Math.pow(sizeN, T.countExp),
+        minArea: minArea * areaScale,
+        score: Math.pow(sizeN, T.countExp) * areaScale,
       };
     }).filter(Boolean);
 
@@ -383,20 +395,20 @@
     // at minArea so even a 1-call bird stays legible.
     var sumScore = tiles.reduce(function (a, t) { return a + t.score; }, 0) || 1;
     tiles.forEach(function (t) {
-      t.area = Math.max(minArea, budget * t.score / sumScore);
+      t.area = Math.max(t.minArea, budget * t.score / sumScore);
     });
     // After flooring, total may exceed budget; squeeze the over-budget
     // remainder out of the LARGER tiles (the ones above minArea) so
     // the floor on rare birds stays intact.
     var sumA = tiles.reduce(function (a, t) { return a + t.area; }, 0);
     if (sumA > budget) {
-      var fixedSum = tiles.filter(function (t) { return t.area <= minArea + 1e-9; })
+      var fixedSum = tiles.filter(function (t) { return t.area <= t.minArea + 1e-9; })
         .reduce(function (a, t) { return a + t.area; }, 0);
       var flexSum  = sumA - fixedSum;
       var flexBudget = Math.max(0, budget - fixedSum);
       var shrink = flexSum > 0 ? Math.min(1, flexBudget / flexSum) : 1;
       tiles.forEach(function (t) {
-        if (t.area > minArea + 1e-9) t.area *= shrink;
+        if (t.area > t.minArea + 1e-9) t.area *= shrink;
       });
     }
     // Step 3: derive width/height from area + per-species aspect.
