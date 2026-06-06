@@ -74,6 +74,16 @@
   function writeLS(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var winBtns = [].slice.call(winPick.querySelectorAll('button'));
   var currentHours = +readLS('bird:window', '24') || 24;
+  function collageSizeCapForHours(h) {
+    if (h <= 1) return 15;
+    if (h <= 12) return 40;
+    if (h <= 24) return 75;
+    if (h <= 168) return 75 * 7;
+    return Infinity;
+  }
+  function collageSizingCount(n) {
+    return Math.min(Math.max(1, n), collageSizeCapForHours(currentHours));
+  }
   winBtns.forEach(function (b) {
     b.setAttribute('aria-current', (+b.dataset.h === currentHours) ? 'true' : 'false');
   });
@@ -347,18 +357,19 @@
     var minArea = vpArea * T.minTileAreaFrac;
 
     // Step 1: build tiles + assign each a count-weighted SCORE (not a
-    // final area yet). area-from-count uses a sub-linear exponent so
-    // a 400-detection bird is visibly larger than a 30-detection bird
-    // without dwarfing it.
+    // final area yet). The displayed data stays exact; only the collage
+    // sizing count is capped so a hyperactive common species cannot
+    // dominate the plate.
     var tiles = items.map(function (s) {
       var slug = slugify(s.sci);
       var mask = loadMask(slug);
       if (!mask) return null;
       var n = +s.n; if (!n || isNaN(n)) n = 1;
+      var sizeN = collageSizingCount(n);
       return {
         mask: mask, data: s,
         ar: aspect(s.sci),
-        score: Math.pow(Math.max(1, n), T.countExp),
+        score: Math.pow(sizeN, T.countExp),
       };
     }).filter(Boolean);
 
