@@ -11,6 +11,120 @@
   // versioned URL is the only reliable way to invalidate everywhere.)
   var IMG_VERSION = '11'; // clean Purple Martin flying asset.
   var publicMirror = document.body.classList.contains('av-public');
+  var API_BASE = location.pathname.indexOf('/avian/frontend/') !== -1 ? '/avian/api/' : './avian/api/';
+  var SITE_TIME_ZONE = 'America/New_York';
+  var SITE_TIME_LABEL = 'ET';
+
+  function apiUrl(path) {
+    return API_BASE + String(path).replace(/^\/+/, '');
+  }
+
+  function wallTimeToSiteMs(value) {
+    var m = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (!m) return NaN;
+    var target = {
+      year: +m[1],
+      month: +m[2],
+      day: +m[3],
+      hour: +m[4],
+      minute: +m[5],
+      second: +(m[6] || 0)
+    };
+    var targetAsUtc = Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute, target.second);
+    var guess = targetAsUtc;
+    for (var i = 0; i < 3; i++) {
+      var p = siteParts(guess);
+      var guessSiteAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+      var delta = targetAsUtc - guessSiteAsUtc;
+      if (!delta) break;
+      guess += delta;
+    }
+    return guess;
+  }
+
+  function parseSiteTs(value) {
+    if (!value) return NaN;
+    var raw = String(value).trim();
+    var iso = raw.replace(' ', 'T');
+    if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(iso)) return Date.parse(iso);
+    var siteMs = wallTimeToSiteMs(raw);
+    return isNaN(siteMs) ? Date.parse(iso) : siteMs;
+  }
+
+  function fmtSiteTime(ms, opts) {
+    if (isNaN(ms)) return '-';
+    return new Date(ms).toLocaleTimeString('en-US', Object.assign({
+      timeZone: SITE_TIME_ZONE,
+      hour: 'numeric',
+      minute: '2-digit'
+    }, opts || {}));
+  }
+
+  function fmtSiteDate(ms, opts) {
+    if (isNaN(ms)) return '-';
+    return new Date(ms).toLocaleDateString('en-US', Object.assign({
+      timeZone: SITE_TIME_ZONE,
+      month: 'short',
+      day: 'numeric'
+    }, opts || {}));
+  }
+
+  function siteParts(ms) {
+    var parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: SITE_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(new Date(ms));
+    var out = {};
+    parts.forEach(function (p) {
+      if (p.type !== 'literal') out[p.type] = p.value;
+    });
+    return {
+      year: +out.year,
+      month: +out.month,
+      day: +out.day,
+      hour: +out.hour,
+      minute: +out.minute,
+      second: +out.second
+    };
+  }
+
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function siteDateKey(ms) {
+    var p = siteParts(ms);
+    return p.year + '-' + pad2(p.month) + '-' + pad2(p.day);
+  }
+
+  function siteWallMs(dateKey, hour, minute) {
+    return wallTimeToSiteMs(dateKey + ' ' + pad2(hour) + ':' + pad2(minute || 0) + ':00');
+  }
+
+  function siteMsFromFields(year, month, day, hour, minute, second) {
+    var d = new Date(Date.UTC(year, month - 1, day, hour || 0, minute || 0, second || 0));
+    return wallTimeToSiteMs(
+      d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' +
+      pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds())
+    );
+  }
+
+  function floorSiteHour(ms) {
+    var p = siteParts(ms);
+    return siteMsFromFields(p.year, p.month, p.day, p.hour, 0, 0);
+  }
+
+  function ceilSiteHour(ms) {
+    var p = siteParts(ms);
+    var add = (p.minute || p.second) ? 1 : 0;
+    return siteMsFromFields(p.year, p.month, p.day, p.hour + add, 0, 0);
+  }
 
   // ---- Sliding pill helper ----
   // Each segmented control has a single .seg-pill element that we move via
@@ -53,11 +167,13 @@
 
   function go(i) {
     i = Math.max(0, Math.min(2, i));
+    document.body.setAttribute('data-view', String(i));
     views.style.transform = 'translateX(-' + (i * 100) + '%)';
     btns.forEach(function (b, j) { b.setAttribute('aria-current', j === i ? 'true' : 'false'); });
     syncPill(slider);
     setTitleForView(i);
   }
+  document.body.setAttribute('data-view', '0');
   btns.forEach(function (b) { b.addEventListener('click', function () { go(+b.dataset.i); }); });
 
   // ---- Window picker ----
@@ -487,7 +603,7 @@
       // common name in its prompt for a freshly-detected species.
       // &v=IMG_VERSION busts CF edge cache when we re-render any species.
       var pose = collagePose(s.sci);
-      var img = './avian/api/cutout.php?sci=' + encodeURIComponent(s.sci) +
+      var img = apiUrl('cutout.php?sci=' + encodeURIComponent(s.sci)) +
         (s.com ? '&com=' + encodeURIComponent(s.com) : '') +
         (pose > 1 ? '&pose=' + pose : '') +
         '&v=' + IMG_VERSION;
@@ -654,6 +770,13 @@
     if (h <= 168) return 'this week';
     return 'all time';
   }
+  function windowTotalLabel(h) {
+    if (h <= 1) return '1h';
+    if (h <= 12) return '12h';
+    if (h <= 24) return '24h';
+    if (h <= 168) return '7d';
+    return 'all-time';
+  }
 
   // ---- Live Pi data layer ----
   // All views read from this DATA object. Populated by fetchAll() on page
@@ -665,6 +788,7 @@
     timeseries: null,   // ./avian/api/birdnet-api.php?action=timeseries (daily + hourly aggregates)
     firstseen: null,    // ./avian/api/birdnet-api.php?action=firstseen (newest lifelist additions)
     recent: null,       // ./avian/api/birdnet-api.php?action=recent&hours=N (refetched on picker change)
+    overnight: null,    // 9 PM-5 AM species summary for the active stats window
   };
 
   // Derived chart arrays, backfilled so 30 buckets always exist.
@@ -732,6 +856,145 @@
     return 'hsl(' + hue + ', ' + sat.toFixed(0) + '%, ' + light.toFixed(0) + '%)';
   }
 
+  function callLabel(n) {
+    return (+n === 1) ? 'call' : 'calls';
+  }
+  function fmtStatsDateTime(value) {
+    if (!value) return '';
+    var ms = parseSiteTs(value);
+    if (isNaN(ms)) return value;
+    return fmtSiteDate(ms) + ' · ' + fmtSiteTime(ms) + ' ' + SITE_TIME_LABEL;
+  }
+  function currentStatsWindowStart(now) {
+    if (currentHours >= 1000000) return -Infinity;
+    return now - currentHours * 3600000;
+  }
+  function isOvernightCallTime(t) {
+    var h = +(String(t || '').slice(0, 2));
+    return !isNaN(h) && (h >= 21 || h < 5);
+  }
+
+  var statsSpeciesCache = {};
+  var overnightSeq = 0;
+  function fetchStatsSpeciesDetail(sci) {
+    var cached = statsSpeciesCache[sci];
+    if (cached && Date.now() - cached.at < 15000) return Promise.resolve(cached.data);
+    return fetchJson(apiUrl('birdnet-api.php?action=species&sci=' + encodeURIComponent(sci)))
+      .then(function (j) {
+        statsSpeciesCache[sci] = { at: Date.now(), data: j };
+        return j;
+      });
+  }
+  function refreshOvernightStats() {
+    var recent = ((DATA.recent && DATA.recent.species) || []).slice();
+    var forHours = currentHours;
+    var seq = ++overnightSeq;
+    if (!recent.length) {
+      DATA.overnight = { species: [], as_of: Date.now() };
+      drawHistograms();
+      return Promise.resolve(DATA.overnight);
+    }
+
+    var now = Date.now();
+    var windowStart = currentStatsWindowStart(now);
+    var commonNames = {};
+    recent.forEach(function (s) { commonNames[s.sci] = s.com || s.sci; });
+
+    return Promise.all(recent.map(function (s) {
+      return fetchStatsSpeciesDetail(s.sci).catch(function () { return null; });
+    })).then(function (details) {
+      if (seq !== overnightSeq || forHours !== currentHours) return null;
+      var bySci = {};
+      details.forEach(function (detail) {
+        if (!detail || !detail.sci) return;
+        (detail.detections || []).forEach(function (d) {
+          if (!isOvernightCallTime(d.t)) return;
+          var ms = parseSiteTs((d.d || '') + ' ' + (d.t || '00:00:00'));
+          if (isNaN(ms) || ms < windowStart || ms > now) return;
+          var row = bySci[detail.sci] || (bySci[detail.sci] = {
+            sci: detail.sci,
+            com: commonNames[detail.sci] || (detail.summary && detail.summary.com) || detail.sci,
+            n: 0,
+            last_ms: 0,
+          });
+          row.n += 1;
+          if (ms > row.last_ms) row.last_ms = ms;
+        });
+      });
+      DATA.overnight = {
+        species: Object.keys(bySci).map(function (sci) { return bySci[sci]; })
+          .sort(function (a, b) {
+            if (b.n !== a.n) return b.n - a.n;
+            return b.last_ms - a.last_ms;
+          })
+          .slice(0, 3),
+        as_of: Date.now(),
+      };
+      drawHistograms();
+      return DATA.overnight;
+    });
+  }
+
+  function statsRecentLimit() {
+    if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) return 5;
+    var h = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (h && h <= 820) return 10;
+    if (h && h <= 950) return 12;
+    return 13;
+  }
+
+  function renderStatsRecentPanel(tl, rows) {
+    tl.classList.remove('is-mobile');
+    tl.classList.remove('is-recent-list');
+    tl.classList.add('is-recent-list');
+    var sorted = rows.slice().sort(function (a, b) {
+      return (parseSiteTs(b.last_seen) || 0) - (parseSiteTs(a.last_seen) || 0);
+    });
+    var listHtml = sorted.slice(0, statsRecentLimit()).map(function (s) {
+      var n = +s.n || 0;
+      return ''
+        + '<div class="stats-recent-row" data-sci="' + s.sci + '">'
+        +   '<div class="stats-recent-name">'
+        +     '<span class="com">' + (s.com || s.sci) + '</span>'
+        +     '<span class="time">' + fmtStatsDateTime(s.last_seen) + '</span>'
+        +   '</div>'
+        +   '<div class="stats-recent-count">'
+        +     '<span class="n">' + fmtN(n) + '</span>'
+        +     '<span class="lbl">' + callLabel(n) + '</span>'
+        +   '</div>'
+        + '</div>';
+    }).join('');
+
+    var overnight = (DATA.overnight && DATA.overnight.species) || [];
+    var overnightHtml = overnight.length ? ''
+      + '<section class="stats-overnight">'
+      +   '<div class="stats-recent-head stats-overnight-head">'
+      +     '<h3>Overnight</h3>'
+      +     '<small>9 PM-5 AM, ' + windowLabel(currentHours) + '</small>'
+      +   '</div>'
+      +   '<div class="stats-overnight-list">'
+      +     overnight.map(function (s) {
+              var n = +s.n || 0;
+              return ''
+                + '<div class="stats-overnight-row" data-sci="' + s.sci + '">'
+                +   '<span class="com">' + (s.com || s.sci) + '</span>'
+                +   '<span class="ct">' + fmtN(n) + ' ' + callLabel(n) + '</span>'
+                + '</div>';
+            }).join('')
+      +   '</div>'
+      + '</section>' : '';
+
+    tl.innerHTML = ''
+      + '<div class="stats-recent-panel">'
+      +   '<div class="stats-recent-head">'
+      +     '<h3>Recent Calls</h3>'
+      +     '<small>newest first, with ' + windowTotalLabel(currentHours) + ' total</small>'
+      +   '</div>'
+      +   '<div class="stats-recent-list">' + listHtml + '</div>'
+      +   overnightHtml
+      + '</div>';
+  }
+
   // Editorial detection timeline. One column per species; the black
   // square's height up the column encodes detection count (y axis),
   // columns run left->right oldest->newest detection (x axis). A
@@ -744,31 +1007,8 @@
     if (!tl) return;
     var all = ((DATA.recent && DATA.recent.species) || []).slice();
 
-    // X-axis = the FULL selected time window, so quiet stretches show
-    // as actual empty space. windowStart/now span everything; species
-    // squares get placed within by their last_seen timestamp.
     var now = Date.now();
-    var isAllWindow = currentHours >= 1000000;
-    var windowStart;
-    if (isAllWindow) {
-      // ALL = since the earliest known first_seen. Fall back to 'now'
-      // if the firstseen list hasn't loaded yet, which collapses to an
-      // empty span - the empty-state branch below catches that.
-      var oldest = now;
-      var first = (DATA.firstseen && DATA.firstseen.species) || [];
-      first.forEach(function (s) {
-        var t = Date.parse((s.first_seen || '').replace(' ', 'T'));
-        if (!isNaN(t) && t < oldest) oldest = t;
-      });
-      ((DATA.lifelist && DATA.lifelist.species) || []).forEach(function (s) {
-        var t = Date.parse((s.first_seen || '').replace(' ', 'T'));
-        if (!isNaN(t) && t < oldest) oldest = t;
-      });
-      windowStart = oldest;
-    } else {
-      windowStart = now - currentHours * 3600000;
-    }
-    var windowSpan = Math.max(1, now - windowStart);
+    tl.classList.remove('is-mobile');
 
     if (!all.length) {
       tl.innerHTML = '<div class="stats-tl-empty">no detections in this window</div>';
@@ -780,6 +1020,9 @@
     // the column layout (which is now time-positioned).
     var plotW = Math.max(140, (tl.clientWidth || window.innerWidth || 800) - 40);
     var narrowStats = plotW < 520;
+    var mobileStats = narrowStats && window.matchMedia && window.matchMedia('(max-width: 700px)').matches;
+    renderStatsRecentPanel(tl, all);
+    return;
     var cap = Math.max(narrowStats ? 3 : 4, Math.floor(plotW / (narrowStats ? 74 : 28)));
     var trimmed = all.length > cap;
     var species = all.slice();
@@ -793,8 +1036,11 @@
     var tier = C <= 5 ? 24 : C <= 12 ? 18 : C <= 24 ? 13 : 9;
     var sq = Math.max(7, Math.min(tier, Math.round((plotW / C) * 0.62)));
     var LABEL_GAP = 7;
-    var mobileStats = narrowStats && window.matchMedia && window.matchMedia('(max-width: 700px)').matches;
-    var SPAN = mobileStats ? 0.34 : 0.52; // bottom slice for squares; rest is label headroom.
+    // Use most of the chart height for ordinary low counts. Only start
+    // compressing the y scale when higher counts arrive and labels need
+    // more headroom above the plot.
+    var countSpan = Math.max(0.52, 0.78 - Math.max(0, maxN - 4) * 0.025);
+    var SPAN = mobileStats ? 0.34 : countSpan; // mobile uses row timeline below.
 
     // Y-axis: 0..maxN with maxN pinned on the top tick. Same as before.
     var ticks = [];
@@ -810,85 +1056,183 @@
       return '<span class="stats-tl-ytick" style="bottom:' + pct.toFixed(1) + '%">' + v + '</span>';
     }).join('');
 
-    // Marks - each species placed by its last_seen time on the x-axis.
-    // When several birds were heard in the same minute, the raw x
-    // positions collide. Spread only the rendered columns enough for
-    // labels/buttons to remain legible; the timeline still keeps their
-    // rough recency order.
     function parseTs(s) {
       if (!s) return NaN;
-      return Date.parse(s.replace(' ', 'T'));
+      return parseSiteTs(s);
     }
+
+    function timelineDomain(rows) {
+      var vals = rows.map(function (s) { return parseTs(s.last_seen); })
+        .filter(function (t) { return !isNaN(t); });
+      if (!vals.length) return { start: now - 6 * 3600000, end: now, normal: false };
+      var minTs = Math.min.apply(null, vals);
+      var maxTs = Math.max.apply(null, vals);
+      var key = siteDateKey(maxTs);
+      var normalStart = siteWallMs(key, 5, 30);
+      var normalEnd = siteWallMs(key, 20, 30);
+      var pad = 45 * 60000;
+      var start, end, normal = false;
+      if (maxTs < normalStart || minTs > normalEnd) {
+        start = floorSiteHour(minTs - pad);
+        end = ceilSiteHour(maxTs + pad);
+      } else {
+        start = minTs < normalStart ? floorSiteHour(minTs - pad) : normalStart;
+        end = maxTs > normalEnd ? ceilSiteHour(maxTs + pad) : normalEnd;
+        normal = start === normalStart && end === normalEnd;
+      }
+      if (end <= start) end = start + 3600000;
+      return { start: start, end: end, normal: normal, dateKey: key };
+    }
+
+    function pickStepMs(span) {
+      var h = span / 3600000;
+      if (h <= 1.2) return 15 * 60000;
+      if (h <= 6) return 60 * 60000;
+      if (h <= 18) return 3 * 3600000;
+      if (h <= 36) return 6 * 3600000;
+      if (h <= 9 * 24) return 24 * 3600000;
+      if (h <= 75 * 24) return 7 * 24 * 3600000;
+      return 30 * 24 * 3600000;
+    }
+
+    function fmtTick(ms, span) {
+      if (span <= 36 * 3600000) {
+        return fmtSiteTime(ms);
+      }
+      if (span <= 75 * 86400000) {
+        return new Date(ms).toLocaleDateString('en-US', {
+          timeZone: SITE_TIME_ZONE,
+          month: 'numeric',
+          day: 'numeric'
+        });
+      }
+      return fmtSiteDate(ms);
+    }
+
+    function timelineTicks(domain, span) {
+      var ticks = [];
+      if (domain.normal) {
+        (narrowStats ? [6, 12, 18, 20] : [6, 9, 12, 15, 18, 20]).forEach(function (h) {
+          var t = siteWallMs(domain.dateKey, h, 0);
+          if (t >= domain.start && t <= domain.end) ticks.push(t);
+        });
+        return ticks;
+      }
+      var stepMs = pickStepMs(span);
+      for (var t = domain.start; t <= domain.end + 1; t += stepMs) ticks.push(t);
+      return ticks;
+    }
+
+    var domain = timelineDomain(species);
+    var windowStart = domain.start;
+    var windowEnd = domain.end;
+    var windowSpan = Math.max(1, windowEnd - windowStart);
+
+    // Marks - each species placed by its actual last_seen time on the
+    // x-axis. Do not spread clustered birds horizontally; that makes the
+    // chart lie about when the calls happened.
     var points = species.map(function (s) {
       var ts = parseTs(s.last_seen);
       var leftPct;
       if (isNaN(ts)) {
         leftPct = 50;
       } else {
-        var clamped = Math.max(windowStart, Math.min(now, ts));
+        var clamped = Math.max(windowStart, Math.min(windowEnd, ts));
         leftPct = ((clamped - windowStart) / windowSpan) * 100;
       }
-      return { s: s, leftPct: leftPct };
+      return { s: s, leftPct: leftPct, ts: ts };
     }).sort(function (a, b) { return a.leftPct - b.leftPct; });
-    var minGapPct = Math.min(22, (narrowStats ? 58 : 42) / plotW * 100);
-    for (var p = 1; p < points.length; p++) {
-      if (points[p].leftPct < points[p - 1].leftPct + minGapPct) {
-        points[p].leftPct = points[p - 1].leftPct + minGapPct;
+
+    tl.classList.toggle('is-mobile', mobileStats);
+
+    if (mobileStats) {
+      function fmtMobileTick(ms) {
+        return fmtTick(ms, windowSpan).replace(':00 ', ' ');
       }
+      var tickVals = timelineTicks(domain, windowSpan).map(function (t) {
+        var pct = ((t - windowStart) / windowSpan) * 100;
+        return { pct: pct, text: fmtMobileTick(t) };
+      });
+      var mobileGrid = tickVals.map(function (t) {
+        return '<i class="stats-tl-mobile-gridline" style="left:' + t.pct.toFixed(2) + '%"></i>';
+      }).join('');
+      var mobileTicks = tickVals.map(function (t) {
+        return '<span class="stats-tl-mobile-tick" style="left:' + t.pct.toFixed(2) + '%">' + t.text + '</span>';
+      }).join('');
+      var mobileRows = points.slice().sort(function (a, b) {
+        var an = +a.s.n || 0;
+        var bn = +b.s.n || 0;
+        if (bn !== an) return bn - an;
+        return (b.ts || 0) - (a.ts || 0);
+      }).map(function (pt) {
+        var s = pt.s;
+        var n = +s.n || 0;
+        var leftPct = Math.max(0, Math.min(100, pt.leftPct));
+        var timeLine = isNaN(pt.ts) ? '' : '<span class="time">' + fmtSiteTime(pt.ts) + ' ' + SITE_TIME_LABEL + '</span>';
+        return ''
+          + '<div class="stats-tl-mobile-row" data-sci="' + s.sci + '" data-left-pct="' + leftPct.toFixed(2) + '">'
+          +   '<div class="stats-tl-mobile-name">'
+          +     '<span class="com">' + (s.com || s.sci) + '</span>'
+          +     timeLine
+          +   '</div>'
+          +   '<div class="stats-tl-mobile-track">'
+          +     mobileGrid
+          +     '<i class="stats-tl-mobile-mark" style="left:' + leftPct.toFixed(2) + '%"></i>'
+          +   '</div>'
+          +   '<div class="stats-tl-mobile-count">' + fmtN(n) + '</div>'
+          + '</div>';
+      }).join('');
+      var noteMobile = trimmed
+        ? '<div class="stats-tl-cap">' + C + ' most-heard of ' + all.length + '</div>'
+        : '';
+      tl.innerHTML =
+        '<div class="stats-tl-mobile">'
+        + mobileRows
+        + '<div class="stats-tl-mobile-axis"><div></div><div class="stats-tl-mobile-track-axis">' + mobileTicks + '</div><div></div></div>'
+        + '</div>'
+        + noteMobile;
+      return;
     }
-    if (points.length && points[points.length - 1].leftPct > 100) {
-      var overflow = points[points.length - 1].leftPct - 100;
-      points.forEach(function (pt) { pt.leftPct = Math.max(0, pt.leftPct - overflow); });
-      for (var q = 1; q < points.length; q++) {
-        if (points[q].leftPct < points[q - 1].leftPct + minGapPct) {
-          points[q].leftPct = points[q - 1].leftPct + minGapPct;
-        }
-      }
-    }
+
+    var labelGapPx = mobileStats ? 84 : (narrowStats ? 90 : 54);
+    var labelGapPct = Math.min(mobileStats ? 26 : 8, labelGapPx / plotW * 100);
+    var laneLast = [];
+    points.forEach(function (pt) {
+      var lane = 0;
+      while (laneLast[lane] != null && pt.leftPct - laneLast[lane] < labelGapPct) lane++;
+      pt.labelLane = lane;
+      laneLast[lane] = pt.leftPct;
+    });
     var cols = points.map(function (pt) {
       var s = pt.s;
       var leftPct = Math.max(0, Math.min(100, pt.leftPct));
       var n = +s.n || 0;
       var bottomPct = (n / maxN) * SPAN * 100;
       var edgeClass = leftPct < 10 ? ' edge-left' : leftPct > 90 ? ' edge-right' : '';
+      var timeLine = isNaN(pt.ts) ? '' : '<span class="time">' + fmtSiteTime(pt.ts) + ' ' + SITE_TIME_LABEL + '</span>';
+      var labelLift = (pt.labelLane || 0) * (narrowStats ? 30 : 38);
+      var lane = pt.labelLane || 0;
+      var labelShift = lane ? ((lane % 2 ? 1 : -1) * Math.ceil(lane / 2) * (narrowStats ? 38 : 46)) : 0;
+      if (leftPct > 88 && labelShift > 0) labelShift = -labelShift;
+      if (leftPct < 12 && labelShift < 0) labelShift = -labelShift;
       return ''
-        + '<div class="stats-tl-col' + edgeClass + '" data-sci="' + s.sci + '" style="left:' + leftPct.toFixed(2) + '%">'
+        + '<div class="stats-tl-col' + edgeClass + '" data-sci="' + s.sci + '" data-left-pct="' + leftPct.toFixed(2) + '" style="left:' + leftPct.toFixed(2) + '%">'
         +   '<div class="stats-tl-square" style="bottom:' + bottomPct.toFixed(1) + '%;width:' + sq + 'px;height:' + sq + 'px"></div>'
-        +   '<div class="stats-tl-label" style="bottom:calc(' + bottomPct.toFixed(1) + '% + ' + (sq + LABEL_GAP) + 'px)">'
+        +   '<div class="stats-tl-label" style="left:calc(50% + ' + labelShift + 'px);bottom:calc(' + bottomPct.toFixed(1) + '% + ' + (sq + LABEL_GAP + labelLift) + 'px)">'
         +     '<span class="com">' + (s.com || s.sci) + '</span>'
         +     '<span class="sci">' + s.sci + '</span>'
+        +     timeLine
         +   '</div>'
         + '</div>';
     }).join('');
 
-    // X-axis ticks + gridlines at regular boundaries that span the
-    // window - every 15 min for 1H, every 4-6 h for 24H, every day for
-    // 7D, etc. Both are children of the plot so left:% aligns.
-    function pickStepMs(span) {
-      var h = span / 3600000;
-      if (h <= 1.2) return 15 * 60000;
-      if (h <= 6) return 60 * 60000;
-      if (h <= 14) return 2 * 3600000;
-      if (h <= 36) return 6 * 3600000;
-      if (h <= 9 * 24) return 24 * 3600000;
-      if (h <= 75 * 24) return 7 * 24 * 3600000;
-      return 30 * 24 * 3600000;
-    }
-    function fmtTick(ms, span) {
-      var d = new Date(ms);
-      var p2 = function (n) { return n < 10 ? '0' + n : '' + n; };
-      if (span <= 36 * 3600000) return p2(d.getHours()) + ':' + p2(d.getMinutes());
-      if (span <= 75 * 86400000) return (d.getMonth() + 1) + '/' + d.getDate();
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    }
-    var stepMs = pickStepMs(windowSpan);
-    var firstTick = Math.ceil(windowStart / stepMs) * stepMs;
+    // X-axis ticks + gridlines use the same dynamic domain as the marks.
     var xaxis = '', gridlines = '';
-    for (var t = firstTick; t <= now; t += stepMs) {
+    timelineTicks(domain, windowSpan).forEach(function (t) {
       var pct = ((t - windowStart) / windowSpan) * 100;
       xaxis += '<span class="stats-tl-xtick" style="left:' + pct.toFixed(2) + '%">' + fmtTick(t, windowSpan) + '</span>';
       gridlines += '<i class="stats-tl-gridline" style="left:' + pct.toFixed(2) + '%"></i>';
-    }
+    });
 
     var note = trimmed
       ? '<div class="stats-tl-cap">' + C + ' most-heard of ' + all.length + '</div>'
@@ -908,7 +1252,7 @@
     function setHi(sci, on) {
       if (!sci) return;
       var esc = sci.replace(/"/g, '\"');
-      v1.querySelectorAll('.stats-tl-col[data-sci="' + esc + '"], .stats-side li[data-sci="' + esc + '"]')
+      v1.querySelectorAll('.stats-tl-col[data-sci="' + esc + '"], .stats-tl-mobile-row[data-sci="' + esc + '"], .stats-recent-row[data-sci="' + esc + '"], .stats-overnight-row[data-sci="' + esc + '"], .stats-side li[data-sci="' + esc + '"]')
         .forEach(function (el) { el.classList.toggle('sync-hi', on); });
     }
     v1.addEventListener('mouseover', function (ev) {
@@ -963,7 +1307,7 @@
     var now = Date.now();
     document.getElementById('statsFirstSeen').innerHTML = fs.length
       ? fs.map(function (s) {
-          var t = Date.parse((s.first_seen || '').replace(' ', 'T'));
+          var t = parseSiteTs(s.first_seen);
           var label = '-';
           if (!isNaN(t)) {
             var daysAgo = Math.floor((now - t) / 86400000);
@@ -1064,13 +1408,13 @@
       var lastHeard = lastSeen
         ? '<div class="last-heard">last heard ' + fmtDateLine(lastParts[0], lastParts[1]) + '</div>'
         : '';
-      var sketchSrc = './avian/api/cutout.php?sci=' + encodeURIComponent(s.sci) +
+      var sketchSrc = apiUrl('cutout.php?sci=' + encodeURIComponent(s.sci)) +
         (s.com ? '&com=' + encodeURIComponent(s.com) : '') +
         '&v=' + SKETCH_VERSION;
       var audioSrc = publicMirror
-        ? (publicAudio ? './avian/api/recording.php?sci=' + encodeURIComponent(s.sci) + '&v=' + audioVersion : '')
-        : './avian/api/recording.php?sci=' + encodeURIComponent(s.sci);
-      var spectroSrc = publicMirror ? '' : './avian/api/spectrogram.php?sci=' + encodeURIComponent(s.sci);
+        ? (publicAudio ? apiUrl('recording.php?sci=' + encodeURIComponent(s.sci) + '&v=' + audioVersion) : '')
+        : apiUrl('recording.php?sci=' + encodeURIComponent(s.sci));
+      var spectroSrc = publicMirror ? '' : apiUrl('spectrogram.php?sci=' + encodeURIComponent(s.sci));
       var playChip = audioSrc ?
         '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
           + ICON_PLAY + '<span>play</span>'
@@ -1242,21 +1586,24 @@
     // lands later - we discard the stale response so the collage
     // never reverts to a different window.
     var forHours = currentHours;
-    return fetchJson('./avian/api/birdnet-api.php?action=recent&hours=' + forHours)
+    return fetchJson(apiUrl('birdnet-api.php?action=recent&hours=' + forHours))
       .then(function (j) {
         if (forHours !== currentHours) return; // window changed mid-flight
-        DATA.recent = j; renderWindowDependent();
+        DATA.recent = j;
+        DATA.overnight = null;
+        renderWindowDependent();
+        refreshOvernightStats();
       })
       .catch(function (e) { console.warn('recent fetch failed', e); });
   }
   function refreshAll() {
     var forHours = currentHours;
     return Promise.all([
-      fetchJson('./avian/api/birdnet-api.php?action=stats').catch(function () { return null; }),
-      fetchJson('./avian/api/birdnet-api.php?action=lifelist').catch(function () { return null; }),
-      fetchJson('./avian/api/birdnet-api.php?action=timeseries&days=30').catch(function () { return null; }),
-      fetchJson('./avian/api/birdnet-api.php?action=firstseen&limit=10').catch(function () { return null; }),
-      fetchJson('./avian/api/birdnet-api.php?action=recent&hours=' + forHours).catch(function () { return null; }),
+      fetchJson(apiUrl('birdnet-api.php?action=stats')).catch(function () { return null; }),
+      fetchJson(apiUrl('birdnet-api.php?action=lifelist')).catch(function () { return null; }),
+      fetchJson(apiUrl('birdnet-api.php?action=timeseries&days=30')).catch(function () { return null; }),
+      fetchJson(apiUrl('birdnet-api.php?action=firstseen&limit=10')).catch(function () { return null; }),
+      fetchJson(apiUrl('birdnet-api.php?action=recent&hours=' + forHours)).catch(function () { return null; }),
     ]).then(function (parts) {
       DATA.stats = parts[0];
       DATA.lifelist = parts[1];
@@ -1265,9 +1612,11 @@
       // Only accept the recent slice if the window hasn't changed
       // since this poll started - otherwise keep what's there.
       if (forHours === currentHours && parts[4]) DATA.recent = parts[4];
+      DATA.overnight = null;
       recomputeDerived();
       renderTimeIndependent();
       renderCollageFromData();
+      refreshOvernightStats();
     });
   }
 
@@ -1331,7 +1680,7 @@
   // means Caddy rejected and we need the lock-screen flow.
   function tryAutoUnlock() {
     if (publicMirror || !dd || !items) return;
-    fetch('./avian/api/menu.php', { credentials: 'same-origin' }).then(function (r) {
+    fetch(apiUrl('menu.php'), { credentials: 'same-origin' }).then(function (r) {
       if (r.status === 200) {
         return r.json().then(function (j) { renderMenu(j.items || []); });
       }
@@ -1351,7 +1700,7 @@
     // POST to menu.php with the header so the browser caches the basic
     // creds for every subsequent request. If Caddy basic_auth accepts
     // them we get a 200 and the drawer renders; 401 means wrong password.
-    fetch('./avian/api/menu.php', {
+    fetch(apiUrl('menu.php'), {
       method: 'POST',
       headers: { 'Authorization': hdr },
       credentials: 'same-origin',
@@ -1566,7 +1915,7 @@
   }
 
   function loadSettings() {
-    fetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
+    fetch(apiUrl('config.php'), { credentials: 'same-origin', cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (cfg) {
         var v = cfg.values || {};
@@ -1668,7 +2017,7 @@
     if (Object.keys(pending).length === 0) return;
     var body = JSON.stringify(pending);
     setSaveState('saving...');
-    fetch('./avian/api/config.php', {
+    fetch(apiUrl('config.php'), {
       method: 'POST', body: body,
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -1728,10 +2077,10 @@
   function fmtRecTime(d, t) {
     // d="2026-05-15", t="20:25:29"
     if (!d) return '-';
-    var date = new Date((d || '') + 'T' + (t || '00:00:00'));
-    if (isNaN(date.getTime())) return d + ' ' + (t || '');
+    var ms = parseSiteTs((d || '') + ' ' + (t || '00:00:00'));
+    if (isNaN(ms)) return d + ' ' + (t || '');
     var now = Date.now();
-    var ago = Math.floor((now - date.getTime()) / 1000);
+    var ago = Math.floor((now - ms) / 1000);
     if (ago < 60) return ago + 's ago';
     if (ago < 3600) return Math.floor(ago / 60) + 'm ago';
     if (ago < 86400) return Math.floor(ago / 3600) + 'h ago';
@@ -1740,16 +2089,15 @@
   function fmtDateLine(d, t) {
     if (!d) return '';
     try {
-      var date = new Date(d + 'T' + (t || '00:00:00'));
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-        ' · ' + (t ? t.slice(0, 5) : '');
+      var ms = parseSiteTs(d + ' ' + (t || '00:00:00'));
+      return fmtSiteDate(ms) + ' · ' + fmtSiteTime(ms) + ' ' + SITE_TIME_LABEL;
     } catch (e) { return d + ' ' + (t || ''); }
   }
   function rarityLabel(total, firstSeenIso) {
     if (!total) return '-';
     var days = 1;
     if (firstSeenIso) {
-      var t = Date.parse((firstSeenIso || '').replace(' ', 'T'));
+      var t = parseSiteTs(firstSeenIso);
       if (!isNaN(t)) days = Math.max(1, Math.ceil((Date.now() - t) / 86400000));
     }
     var perDay = total / days;
@@ -1824,7 +2172,7 @@
     var sp = ((DATA.lifelist && DATA.lifelist.species) || [])
       .find(function (s) { return s.sci === sci; });
     var com = sp ? (sp.com || '') : '';
-    var base = './avian/api/cutout.php?sci=' + encodeURIComponent(sci) +
+    var base = apiUrl('cutout.php?sci=' + encodeURIComponent(sci)) +
       (com ? '&com=' + encodeURIComponent(com) : '') +
       '&v=' + SKETCH_VERSION;
     var n = +pose || 1;
@@ -1925,7 +2273,7 @@
     // Species detail (lifelist row + every detection).
     var loadSpecies = SPECIES_CACHE[sci]
       ? Promise.resolve(SPECIES_CACHE[sci])
-      : fetchJson('./avian/api/birdnet-api.php?action=species&sci=' + encodeURIComponent(sci)).then(function (j) {
+      : fetchJson(apiUrl('birdnet-api.php?action=species&sci=' + encodeURIComponent(sci))).then(function (j) {
           SPECIES_CACHE[sci] = j;
           return j;
         });
@@ -1935,7 +2283,7 @@
       document.getElementById('modalAllTime').textContent = fmtN(speciesTotal(s));
       var winRow = ((DATA.recent && DATA.recent.species) || []).filter(function (x) { return x.sci === sci; })[0];
       document.getElementById('modalWindow').textContent = fmtN(winRow ? +winRow.n : 0);
-      document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtRecTime(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
+      document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtDateLine(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
       var rar = rarityLabel(speciesTotal(s), s.first_seen);
       var rarEl = document.getElementById('modalRarity');
       rarEl.textContent = rar;
@@ -1969,7 +2317,7 @@
     // Wikipedia summary (description + genus / family).
     var loadWiki = WIKI_CACHE[sci]
       ? Promise.resolve(WIKI_CACHE[sci])
-      : fetchJson('./avian/api/wiki.php?sci=' + encodeURIComponent(sci)).then(function (j) {
+      : fetchJson(apiUrl('wiki.php?sci=' + encodeURIComponent(sci))).then(function (j) {
           WIKI_CACHE[sci] = j; return j;
         });
     loadWiki.then(function (j) {
@@ -2137,7 +2485,6 @@
     return fetch(url, { credentials: 'same-origin', cache: 'no-store' });
   }
   function openAdmin(section) {
-    if (publicMirror || !adminEl) return;
     document.body.classList.add('admin-on');
     adminEl.setAttribute('aria-hidden', 'false');
     adminTitle.textContent = ADMIN_TITLES[section] || section;
@@ -2149,7 +2496,6 @@
     else if (section === 'tools') renderAdminTools();
   }
   function closeAdmin() {
-    if (!adminEl) return;
     document.body.classList.remove('admin-on');
     adminEl.setAttribute('aria-hidden', 'true');
     if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
@@ -2169,7 +2515,7 @@
 
   function renderAdminSettings() {
     adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading settings...</p>';
-    fetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
+    fetch(apiUrl('config.php'), { credentials: 'same-origin', cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (cfg) {
         var v = cfg.values || {};
@@ -2201,7 +2547,7 @@
   function renderAdminSystem() {
     adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading...</p>';
     function tick() {
-      adminApi('./avian/api/birdnet-status.php?action=diag')
+      adminApi(apiUrl('birdnet-status.php?action=diag'))
         .then(function (r) { return r.text().then(function (raw) { return { status: r.status, raw: raw }; }); })
         .then(function (res) {
           var j = null;
@@ -2300,7 +2646,7 @@
         var unit = b.dataset.unit;
         if (!confirm('Restart ' + unit + '?')) return;
         b.disabled = true; var old = b.textContent; b.textContent = '...';
-        fetch('./avian/api/birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit), {
+        fetch(apiUrl('birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit)), {
           method: 'POST', credentials: 'same-origin',
         })
           .then(function (r) { return r.json(); })
@@ -2337,7 +2683,7 @@
       autoScroll = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 20;
     });
     function tick() {
-      adminApi('./avian/api/birdnet-status.php?action=logs&unit=' + encodeURIComponent(unit) + '&lines=' + lines)
+      adminApi(apiUrl('birdnet-status.php?action=logs&unit=' + encodeURIComponent(unit) + '&lines=' + lines))
         .then(function (r) { return r.text().then(function (raw) { return { status: r.status, raw: raw }; }); })
         .then(function (res) {
           var j = null;
@@ -2404,7 +2750,7 @@
         if (!confirm('restart ' + unit + '?')) return;
         b.disabled = true; var old = b.textContent; b.textContent = '...';
         var out = adminBody.querySelector('.out[data-out="' + unit.replace(/[^a-z0-9_.-]/gi,'_') + '"]');
-        fetch('./avian/api/birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit), {
+        fetch(apiUrl('birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit)), {
           method: 'POST', credentials: 'same-origin',
         })
           .then(function (r) { return r.json(); })
@@ -2449,18 +2795,13 @@
     window.__lastHashchange = Date.now();
     var sci = readHash();
     var adm = readAdminHash();
-    if (publicMirror && adm) {
-      history.replaceState(null, '', location.pathname + location.search);
-      closeAdmin();
-      return;
-    }
     if (location.hash === '#about') openAbout(); else closeAbout();
     if (adm) { openAdmin(adm); return; }
     closeAdmin();
     if (sci) { go(2); highlightAtlas(sci); openDetailModal(sci); }
     else     { highlightAtlas(null); closeDetailModal(); }
   }
-  if (!publicMirror && readAdminHash()) openAdmin(readAdminHash());
+  if (readAdminHash()) openAdmin(readAdminHash());
   if (location.hash === '#about') openAbout();
   window.addEventListener('hashchange', syncRouter);
 
@@ -2695,7 +3036,7 @@
     }
     var ctx = getSpecCtx();
     if (!ctx) { fail('WebAudio not available'); return; }
-    fetch('./avian/api/recording.php?file=' + encodeURIComponent(file))
+    fetch(apiUrl('recording.php?file=' + encodeURIComponent(file)))
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.arrayBuffer();
@@ -2758,7 +3099,7 @@
       prow.classList.add('expanded');
       ensureSpectroImage(prow);
       var strip = prow.querySelector('.rec-spectro');
-      var audio = new Audio('./avian/api/recording.php?file=' + encodeURIComponent(pfile));
+      var audio = new Audio(apiUrl('recording.php?file=' + encodeURIComponent(pfile)));
       modalAudio = audio;
       audio.addEventListener('loadedmetadata', function () {
         strip.classList.add('armed');
