@@ -2,16 +2,16 @@
 
 A BirdNET-Pi display that turns recent detections into an illustrated bird collage.
 
-This is a fork of the [Twarner491/AvianVisitors](https://github.com/Twarner491/AvianVisitors) awesome project. The original README is saved as [`README.upstream.md`](README.upstream.md). This fork keeps the local Pi display, but adds a public-facing mirror that is safe to show and share outside your home network. It also adds a Central Florida 34-bird art pack, and improves UI layout on phone screens locally and on the public mirror.
+This is a fork of the [Twarner491/AvianVisitors](https://github.com/Twarner491/AvianVisitors) awesome project. The original README is saved as [`README.upstream.md`](README.upstream.md). This fork keeps the local Pi display, but adds a secure public-facing mirror without admin controls. It also adds a Central Florida 36-bird art pack, increases collage illustration sizing across devices, and redesigns the Stats page around recent calls.
 
 ## What changed
 
-- Added a public-facing mirror, including a [`netlify-mirror`](netlify-mirror) package for easy deployment on Netlify. Non-Netlify setup notes are also included below.
-- Added a 34-species illustration pack for birds common around Central Florida. The new cutouts are in [`avian/assets/illustrations`](avian/assets/illustrations), with matching sizing data in the frontend.
-- Tuned the mobile collage so small sets of birds sit together more naturally on narrow screens.
-- Reworked the mobile stats view so the timeline has room for rotated names and does not crowd the tables below it.
+- Added a secure, public-facing mirror without admin controls, including a [`netlify-mirror`](netlify-mirror) package for easy deployment on Netlify. Non-Netlify setup notes are also included below.
+- Added a 36-species Central Florida illustration pack for birds common around ponds, yards, and wetlands in the region. The cutouts live in [`avian/assets/illustrations`](avian/assets/illustrations), with matching sizing data in the frontend.
+- Increased the bird illustration sizing so the collage uses more of the screen on desktop, tablet, and phone layouts.
+- Redesigned the Stats page for all devices around a recent-calls list sorted by latest detection time, with each bird's call total shown beside it. Period and top-species summaries appear below the recent list.
 
-The 34-species Central Florida pack includes, in eBird taxonomic order:
+The 36-species Central Florida pack includes, in eBird taxonomic order:
 
 - Black-bellied Whistling-Duck
 - Common Gallinule
@@ -28,10 +28,12 @@ The 34-species Central Florida pack includes, in eBird taxonomic order:
 - Glossy Ibis
 - Tricolored Heron
 - Swallow-tailed Kite
+- Barred Owl
 - Red-bellied Woodpecker
 - Eastern Phoebe
 - Great Crested Flycatcher
 - White-eyed Vireo
+- Yellow-throated Vireo
 - Red-eyed Vireo
 - Blue Jay
 - Fish Crow
