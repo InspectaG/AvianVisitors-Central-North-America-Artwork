@@ -269,7 +269,7 @@
     var mobileCompact = W <= 700 && H > W;
     var roomyCanvas = W >= 900 && H >= 420 && W >= H;
     var roomyAreaScale = roomyCanvas ? 1.40 * 1.40 : 1;
-    var mobileLinearScale = mobileCompact ? (n <= 6 ? 1.16 : n <= 12 ? 1.23 : 1.36) : 1;
+    var mobileLinearScale = mobileCompact ? (n <= 6 ? 1.25 : n <= 12 ? 1.33 : 1.47) : 1;
     var mobileAreaScale = mobileLinearScale * mobileLinearScale;
     var packingBudgetFrac = mobileCompact && n <= 6 ? 0.34 :
                             mobileCompact && n <= 12 ? 0.36 :
@@ -561,7 +561,7 @@
       });
       return { L: L, R: R, T: T2, B: B };
     }
-    var fitMarginX = T.mobileCompact ? W * 0.005 : 0;
+    var fitMarginX = T.mobileCompact ? W * 0.002 : 0;
     var fitMarginY = T.mobileCompact ? H * 0.04 : 0;
     var fitW = Math.max(1, W - fitMarginX * 2);
     var fitH = Math.max(1, H - fitMarginY * 2);
