@@ -6,6 +6,10 @@ declare const Netlify: {
   context?: { deploy?: { context?: string } };
 };
 
+const AUDIO_KEY_RE = /^public-audio\/[a-z0-9-]+\/[a-f0-9]{24}\.mp3$/;
+const SCI_RE = /^[A-Za-z]{2,40}(?:[ ][a-z]{2,40}){1,3}$/;
+const MAX_AUDIO_BYTES = 1_500_000;
+
 function store() {
   if (Netlify.context?.deploy?.context === "production") {
     return getStore({ name: "avianvisitors", consistency: "strong" });
@@ -35,7 +39,38 @@ async function isAuthorized(req: Request) {
   return Boolean(expected) && provided === expected;
 }
 
+async function handleAudio(req: Request) {
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+  if (!(await isAuthorized(req))) return json({ error: "unauthorized" }, 401);
+
+  const key = req.headers.get("x-avian-audio-key") || req.headers.get("x-pondbirds-audio-key") || "";
+  const sci = req.headers.get("x-avian-sci") || req.headers.get("x-pondbirds-sci") || "";
+  if (!AUDIO_KEY_RE.test(key)) return json({ error: "invalid audio key" }, 400);
+  if (!SCI_RE.test(sci)) return json({ error: "invalid sci" }, 400);
+
+  const contentLength = Number(req.headers.get("content-length") || "0");
+  if (contentLength > MAX_AUDIO_BYTES) return json({ error: "audio too large" }, 413);
+
+  const body = await req.arrayBuffer();
+  if (body.byteLength < 64) return json({ error: "audio too small" }, 400);
+  if (body.byteLength > MAX_AUDIO_BYTES) return json({ error: "audio too large" }, 413);
+
+  await store().set(key, body, {
+    metadata: {
+      sci,
+      content_type: "audio/mpeg",
+      bytes: body.byteLength,
+      received_at: new Date().toISOString(),
+    },
+  });
+
+  return json({ ok: true, key, bytes: body.byteLength });
+}
+
 export default async (req: Request) => {
+  const url = new URL(req.url);
+  if (url.pathname.endsWith("/audio")) return handleAudio(req);
+
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   if (!(await isAuthorized(req))) return json({ error: "unauthorized" }, 401);
@@ -69,5 +104,5 @@ export default async (req: Request) => {
 };
 
 export const config: Config = {
-  path: "/api/mirror/ingest",
+  path: ["/api/mirror/ingest", "/api/mirror/audio"],
 };

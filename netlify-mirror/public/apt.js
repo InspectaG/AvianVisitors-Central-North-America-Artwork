@@ -2,7 +2,7 @@
   var PLACEHOLDER = [{"sci":"Calypte anna","com":"Anna's Hummingbird","featured":true},{"sci":"Passer domesticus","com":"House Sparrow"},{"sci":"Haemorhous mexicanus","com":"House Finch"},{"sci":"Turdus migratorius","com":"American Robin"},{"sci":"Zenaida macroura","com":"Mourning Dove"},{"sci":"Spinus psaltria","com":"Lesser Goldfinch"},{"sci":"Zonotrichia leucophrys","com":"White-crowned Sparrow"},{"sci":"Aphelocoma californica","com":"California Scrub-Jay"},{"sci":"Mimus polyglottos","com":"Northern Mockingbird"},{"sci":"Sayornis nigricans","com":"Black Phoebe"},{"sci":"Larus occidentalis","com":"Western Gull"},{"sci":"Corvus brachyrhynchos","com":"American Crow"}];
   // Bumped whenever the offline sketch build changes, so the browser
   // doesn't keep a stale cache after we regenerate the sketches.
-  var SKETCH_VERSION = '16'; // larger vertical mobile collage with safe margins.
+  var SKETCH_VERSION = '18'; // wider, slightly higher mobile collage.
   // Cache-bust for /api/img - bump whenever a bird gets re-rendered via
   // /api/regen or whenever you need every CF DC to drop its cached copy.
   // Cloudflare keys on the full URL incl. query, so bumping this is
@@ -153,7 +153,7 @@
     var mobileCompact = W <= 700 && H > W;
     var roomyCanvas = W >= 900 && H >= 420 && W >= H;
     var roomyAreaScale = roomyCanvas ? 1.40 * 1.40 : 1;
-    var mobileLinearScale = mobileCompact ? (n <= 6 ? 1.14 : n <= 12 ? 1.20 : 1.25) : 1;
+    var mobileLinearScale = mobileCompact ? (n <= 6 ? 1.16 : n <= 12 ? 1.23 : 1.36) : 1;
     var mobileAreaScale = mobileLinearScale * mobileLinearScale;
     var packingBudgetFrac = mobileCompact && n <= 6 ? 0.34 :
                             mobileCompact && n <= 12 ? 0.36 :
@@ -185,7 +185,7 @@
       minTileAreaFrac: minTileAreaFrac * roomyAreaScale * mobileAreaScale,
       // Wider clusters for desktop/landscape. Phone collages start as
       // a circular clump, then become vertical as the species count grows.
-      ellipseAspectBias: mobileCompact ? (n <= 8 ? 1.0 : n <= 14 ? 0.88 : 0.72) : 2.1,
+      ellipseAspectBias: mobileCompact ? (n <= 8 ? 1.08 : n <= 14 ? 0.98 : 0.88) : 2.1,
       mobileCompact: mobileCompact,
       roomyCanvas: roomyCanvas,
     };
@@ -445,8 +445,8 @@
       });
       return { L: L, R: R, T: T2, B: B };
     }
-    var fitMarginX = T.mobileCompact ? W * 0.02 : 0;
-    var fitMarginY = T.mobileCompact ? H * 0.06 : 0;
+    var fitMarginX = T.mobileCompact ? W * 0.005 : 0;
+    var fitMarginY = T.mobileCompact ? H * 0.04 : 0;
     var fitW = Math.max(1, W - fitMarginX * 2);
     var fitH = Math.max(1, H - fitMarginY * 2);
     var b = clusterBounds(placed);
@@ -470,7 +470,7 @@
 
     // Re-centre the cluster in the viewport so a small cluster doesn't
     // drift to one side from the spiral's center-of-mass bias.
-    var targetY = T.mobileCompact ? H * 0.50 : H / 2;
+    var targetY = T.mobileCompact ? H * 0.47 : H / 2;
     var dx = W / 2 - (b.L + b.R) / 2;
     var dy = targetY - (b.T + b.B) / 2;
     var marginX = fitMarginX;
@@ -676,6 +676,9 @@
 
   // Map sci -> all-time detection count, populated from lifelist for atlas.
   var speciesTotals = {};
+  function speciesTotal(s) {
+    return +(s && (s.total != null ? s.total : s.n)) || 0;
+  }
 
   function fetchJson(url) {
     return fetch(url, { cache: 'no-store' })
@@ -710,7 +713,7 @@
     (ts.by_hour || []).forEach(function (r) { byHour[+r.hour] = +r.detections; });
     STATS.byHour = byHour;
     speciesTotals = {};
-    (ll.species || []).forEach(function (s) { speciesTotals[s.sci] = +s.total; });
+    (ll.species || []).forEach(function (s) { speciesTotals[s.sci] = speciesTotal(s); });
   }
 
   // ---- Chart palette ----
@@ -1040,7 +1043,7 @@
     var sortMode = (window.__atlasSort) || 'count';
     var species = filtered.slice();
     if (sortMode === 'count') {
-      species.sort(function (a, b) { return (+b.total) - (+a.total); });
+      species.sort(function (a, b) { return speciesTotal(b) - speciesTotal(a); });
     } else if (sortMode === 'recent') {
       species.sort(function (a, b) {
         return (b.last_seen || '').localeCompare(a.last_seen || '');
@@ -1052,17 +1055,26 @@
     }
 
     grid.innerHTML = species.map(function (s) {
-      var total = +s.total || 0;
+      var total = speciesTotal(s);
       var win = winBySci[s.sci] || 0;
+      var publicAudio = publicMirror && s.public_audio;
+      var audioVersion = publicAudio ? encodeURIComponent(publicAudio.key || publicAudio.last_seen || s.last_seen || '') : '';
+      var lastSeen = (publicAudio && publicAudio.last_seen) || s.last_seen || '';
+      var lastParts = lastSeen.split(' ');
+      var lastHeard = lastSeen
+        ? '<div class="last-heard">last heard ' + fmtDateLine(lastParts[0], lastParts[1]) + '</div>'
+        : '';
       var sketchSrc = './avian/api/cutout.php?sci=' + encodeURIComponent(s.sci) +
         (s.com ? '&com=' + encodeURIComponent(s.com) : '') +
         '&v=' + SKETCH_VERSION;
-      var audioSrc = publicMirror ? '' : './avian/api/recording.php?sci=' + encodeURIComponent(s.sci);
+      var audioSrc = publicMirror
+        ? (publicAudio ? './avian/api/recording.php?sci=' + encodeURIComponent(s.sci) + '&v=' + audioVersion : '')
+        : './avian/api/recording.php?sci=' + encodeURIComponent(s.sci);
       var spectroSrc = publicMirror ? '' : './avian/api/spectrogram.php?sci=' + encodeURIComponent(s.sci);
-      var playChip = publicMirror ? '' :
+      var playChip = audioSrc ?
         '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
           + ICON_PLAY + '<span>play</span>'
-        + '</button>';
+        + '</button>' : '';
       // The "all time" window makes the windowed count identical to the
       // all-time count - collapse to a single stat rather than print the
       // same number twice. Otherwise label the count with its span.
@@ -1079,6 +1091,7 @@
         +   '<div class="spectro-wrap" aria-hidden="true"></div>'
         +   '<h3>' + s.com + '</h3>'
         +   '<div class="sci">' + s.sci + '</div>'
+        +   lastHeard
         +   '<div class="actions">'
         +     playChip
         +     '<a class="chip ext" href="' + wikiUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>'
@@ -1145,13 +1158,18 @@
         currentBtn = btn;
         // Kick off spectrogram load in parallel (it's a separate request).
         var spectroWrap = card.querySelector('.spectro-wrap');
-        if (spectroWrap && !spectroWrap.firstChild) {
+        if (spectroWrap && card.dataset.spectro && !spectroWrap.firstChild) {
           var img = document.createElement('img');
           img.loading = 'lazy';
           img.alt = '';
           img.src = card.dataset.spectro;
           img.addEventListener('error', function () { spectroWrap.removeChild(img); });
           spectroWrap.appendChild(img);
+        }
+        if (!card.dataset.audio) {
+          setBtnState(btn, 'missing');
+          currentAudio = null; currentBtn = null;
+          return;
         }
         // Start audio.
         var audio = new Audio(card.dataset.audio);
@@ -1188,6 +1206,7 @@
       if (!sw || !sw.firstChild) return;
       var card = sw.closest('.bird-card');
       var btn = card.querySelector('[data-action="play"]');
+      if (!btn) return;
       // If this card is the active one, scrub.
       if (currentBtn === btn && currentAudio && currentAudio.duration) {
         var rect = sw.getBoundingClientRect();
@@ -1913,11 +1932,11 @@
     loadSpecies.then(function (j) {
       var s = j.summary || {};
       document.getElementById('modalCommon').textContent = s.com || sci;
-      document.getElementById('modalAllTime').textContent = fmtN(+s.total || 0);
+      document.getElementById('modalAllTime').textContent = fmtN(speciesTotal(s));
       var winRow = ((DATA.recent && DATA.recent.species) || []).filter(function (x) { return x.sci === sci; })[0];
       document.getElementById('modalWindow').textContent = fmtN(winRow ? +winRow.n : 0);
       document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtRecTime(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
-      var rar = rarityLabel(+s.total || 0, s.first_seen);
+      var rar = rarityLabel(speciesTotal(s), s.first_seen);
       var rarEl = document.getElementById('modalRarity');
       rarEl.textContent = rar;
       if (rar === 'rare') rarEl.classList.add('rare');

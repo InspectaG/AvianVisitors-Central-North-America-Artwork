@@ -34,7 +34,7 @@
   }
   .static-head {
     flex: 0 0 auto;
-    padding: 84px 32px 22px;
+    padding: 70px 32px 14px;
     text-align: center; position: relative; z-index: 5;
   }
   .static-head .pre {
@@ -58,7 +58,7 @@
   }
   .static-head.swap-out h1 { opacity: 0; }
   @media (max-width: 700px) {
-    .static-head { padding: 84px 18px 18px; }
+    .static-head { padding: 68px 18px 10px; }
   }
 
   .views {
@@ -72,7 +72,7 @@
   .view#v0, .view#v1 { overflow: hidden; padding: 8px 32px 88px; }
   .view#v0 { display: flex; }
   .view#v1 { display: flex; flex-direction: column; }
-  @media (max-width: 700px) { .view { padding: 8px 18px 132px; } .view#v0, .view#v1 { padding: 8px 16px 88px; } }
+  @media (max-width: 700px) { .view { padding: 8px 18px 132px; } .view#v0 { padding: 8px 8px 88px; } .view#v1 { padding: 8px 16px 88px; } }
 
   /* ============ Top bar - window picker (left) + menu button (right). ============
      Visible on every view; the picker is the universal time-window control. */
@@ -844,6 +844,13 @@
   .bird-card .sci {
     font: italic 11px/1.2 ui-serif, Georgia, serif;
     color: var(--ink-2); margin: 2px 0 0;
+  }
+  .bird-card .last-heard {
+    font: 9.5px/1.2 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+    text-transform: lowercase;
   }
   .bird-card .actions {
     display: flex; gap: 6px; align-items: stretch;

@@ -12,7 +12,6 @@ export default async () => {
 
 export const config: Config = {
   path: [
-    "/avian/api/recording.php",
     "/avian/api/spectrogram.php",
     "/avian/api/config.php",
     "/avian/api/birdnet-status.php",
