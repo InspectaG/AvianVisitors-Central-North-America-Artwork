@@ -2,7 +2,7 @@
   var PLACEHOLDER = [{"sci":"Calypte anna","com":"Anna's Hummingbird","featured":true},{"sci":"Passer domesticus","com":"House Sparrow"},{"sci":"Haemorhous mexicanus","com":"House Finch"},{"sci":"Turdus migratorius","com":"American Robin"},{"sci":"Zenaida macroura","com":"Mourning Dove"},{"sci":"Spinus psaltria","com":"Lesser Goldfinch"},{"sci":"Zonotrichia leucophrys","com":"White-crowned Sparrow"},{"sci":"Aphelocoma californica","com":"California Scrub-Jay"},{"sci":"Mimus polyglottos","com":"Northern Mockingbird"},{"sci":"Sayornis nigricans","com":"Black Phoebe"},{"sci":"Larus occidentalis","com":"Western Gull"},{"sci":"Corvus brachyrhynchos","com":"American Crow"}];
   // Bumped whenever the offline sketch build changes, so the browser
   // doesn't keep a stale cache after we regenerate the sketches.
-  var SKETCH_VERSION = '14'; // 33%-roomy collage sizing.
+  var SKETCH_VERSION = '15'; // 40%-roomy + vertical mobile collage.
   // Cache-bust for /api/img - bump whenever a bird gets re-rendered via
   // /api/regen or whenever you need every CF DC to drop its cached copy.
   // Cloudflare keys on the full URL incl. query, so bumping this is
@@ -152,7 +152,9 @@
   function tuning(n, W, H) {
     var mobileCompact = W <= 700 && H > W;
     var roomyCanvas = W >= 900 && H >= 420 && W >= H;
-    var roomyAreaScale = roomyCanvas ? 1.33 * 1.33 : 1;
+    var roomyAreaScale = roomyCanvas ? 1.40 * 1.40 : 1;
+    var mobileLinearScale = mobileCompact ? (n <= 6 ? 1.10 : n <= 12 ? 1.14 : 1.18) : 1;
+    var mobileAreaScale = mobileLinearScale * mobileLinearScale;
     var packingBudgetFrac = mobileCompact && n <= 6 ? 0.34 :
                             mobileCompact && n <= 12 ? 0.36 :
                             n <= 4  ? 0.46 :
@@ -168,7 +170,7 @@
       // breathing room (and more headroom for packing efficiency).
       // Steps down as species count grows so a busy plate doesn't
       // try to claim the entire viewport.
-      packingBudgetFrac: packingBudgetFrac * roomyAreaScale,
+      packingBudgetFrac: packingBudgetFrac * roomyAreaScale * mobileAreaScale,
       // Count -> area exponent. ~0.65 keeps the visual hierarchy
       // legible (n=400 reads ~5× bigger than n=30) without the
       // loudest bird drowning everything else.
@@ -176,13 +178,14 @@
       // Floor: every species in the dataset must be visible, even
       // n=1. Tracks species count so a tiny rare bird stays
       // recognisable on a crowded plate.
-      // Roomy landscape canvases get a 33% linear-size boost; area
-      // fractions scale by 1.33 * 1.33 so rendered birds grow by 1.33.
-      minTileAreaFrac: minTileAreaFrac * roomyAreaScale,
-      // Wider clusters for desktop/landscape. Phone collages with only
-      // a few birds read better as a compact rosette instead of a wide
-      // time-line-like spread.
-      ellipseAspectBias: mobileCompact && n <= 8 ? 1.12 : 2.1,
+      // Roomy landscape canvases get a 40% linear-size boost; area
+      // fractions scale by 1.40 * 1.40 so rendered birds grow by 1.40.
+      // Phone portrait also grows modestly, then uses a vertical oval
+      // as species count rises so it can spend height instead of width.
+      minTileAreaFrac: minTileAreaFrac * roomyAreaScale * mobileAreaScale,
+      // Wider clusters for desktop/landscape. Phone collages start as
+      // a circular clump, then become vertical as the species count grows.
+      ellipseAspectBias: mobileCompact ? (n <= 8 ? 1.0 : n <= 14 ? 0.88 : 0.72) : 2.1,
       mobileCompact: mobileCompact,
       roomyCanvas: roomyCanvas,
     };
