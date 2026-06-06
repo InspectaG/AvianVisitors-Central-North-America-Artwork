@@ -2,7 +2,7 @@
   var PLACEHOLDER = [{"sci":"Calypte anna","com":"Anna's Hummingbird","featured":true},{"sci":"Passer domesticus","com":"House Sparrow"},{"sci":"Haemorhous mexicanus","com":"House Finch"},{"sci":"Turdus migratorius","com":"American Robin"},{"sci":"Zenaida macroura","com":"Mourning Dove"},{"sci":"Spinus psaltria","com":"Lesser Goldfinch"},{"sci":"Zonotrichia leucophrys","com":"White-crowned Sparrow"},{"sci":"Aphelocoma californica","com":"California Scrub-Jay"},{"sci":"Mimus polyglottos","com":"Northern Mockingbird"},{"sci":"Sayornis nigricans","com":"Black Phoebe"},{"sci":"Larus occidentalis","com":"Western Gull"},{"sci":"Corvus brachyrhynchos","com":"American Crow"}];
   // Bumped whenever the offline sketch build changes, so the browser
   // doesn't keep a stale cache after we regenerate the sketches.
-  var SKETCH_VERSION = '15'; // 40%-roomy + vertical mobile collage.
+  var SKETCH_VERSION = '16'; // larger vertical mobile collage with safe margins.
   // Cache-bust for /api/img - bump whenever a bird gets re-rendered via
   // /api/regen or whenever you need every CF DC to drop its cached copy.
   // Cloudflare keys on the full URL incl. query, so bumping this is
@@ -153,7 +153,7 @@
     var mobileCompact = W <= 700 && H > W;
     var roomyCanvas = W >= 900 && H >= 420 && W >= H;
     var roomyAreaScale = roomyCanvas ? 1.40 * 1.40 : 1;
-    var mobileLinearScale = mobileCompact ? (n <= 6 ? 1.10 : n <= 12 ? 1.14 : 1.18) : 1;
+    var mobileLinearScale = mobileCompact ? (n <= 6 ? 1.14 : n <= 12 ? 1.20 : 1.25) : 1;
     var mobileAreaScale = mobileLinearScale * mobileLinearScale;
     var packingBudgetFrac = mobileCompact && n <= 6 ? 0.34 :
                             mobileCompact && n <= 12 ? 0.36 :
@@ -445,18 +445,22 @@
       });
       return { L: L, R: R, T: T2, B: B };
     }
+    var fitMarginX = T.mobileCompact ? W * 0.02 : 0;
+    var fitMarginY = T.mobileCompact ? H * 0.06 : 0;
+    var fitW = Math.max(1, W - fitMarginX * 2);
+    var fitH = Math.max(1, H - fitMarginY * 2);
     var b = clusterBounds(placed);
     for (var iter = 0; iter < 10; iter++) {
       var missing  = placed.some(function (t) { return t.x < -1000; });
-      var overflow = b.L < 0 || b.T < 0 || b.R > W || b.B > H;
+      var clW = b.R - b.L, clH = b.B - b.T;
+      var overflow = b.L < 0 || b.T < 0 || b.R > W || b.B > H || clW > fitW || clH > fitH;
       if (!missing && !overflow) break;
       // Base 0.93 linear shrink (≈ 0.86 area). If overflow, take the
       // tighter of cluster-to-viewport ratios so we converge fast.
       var scale = 0.93;
       if (overflow) {
-        var clW = b.R - b.L, clH = b.B - b.T;
-        var sx = (W * 0.96) / Math.max(clW, W * 0.96);
-        var sy = (H * 0.94) / Math.max(clH, H * 0.94);
+        var sx = (fitW * 0.98) / Math.max(clW, fitW * 0.98);
+        var sy = (fitH * 0.98) / Math.max(clH, fitH * 0.98);
         scale = Math.min(scale, sx, sy);
       }
       tiles.forEach(function (t) { t.fullW *= scale; t.fullH *= scale; });
@@ -466,11 +470,11 @@
 
     // Re-centre the cluster in the viewport so a small cluster doesn't
     // drift to one side from the spiral's center-of-mass bias.
-    var targetY = T.mobileCompact ? H * 0.47 : H / 2;
+    var targetY = T.mobileCompact ? H * 0.50 : H / 2;
     var dx = W / 2 - (b.L + b.R) / 2;
     var dy = targetY - (b.T + b.B) / 2;
-    var marginX = T.mobileCompact ? W * 0.02 : 0;
-    var marginY = T.mobileCompact ? H * 0.02 : 0;
+    var marginX = fitMarginX;
+    var marginY = fitMarginY;
     dx = Math.max(marginX - b.L, Math.min(W - marginX - b.R, dx));
     dy = Math.max(marginY - b.T, Math.min(H - marginY - b.B, dy));
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
