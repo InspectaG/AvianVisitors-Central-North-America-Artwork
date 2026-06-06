@@ -141,16 +141,32 @@ if ($common === null) {
 //   subdirectory named exactly $common, return the newest .mp3 inside.
 function newest_recording(string $rootDir, string $common): ?string {
     if (!is_dir($rootDir)) return null;
+    // Match species dirs by a normalised name so apostrophes / case /
+    // punctuation don't matter: "Anna's_Hummingbird" == "Annas_Hummingbird"
+    // == "annas hummingbird". BirdNET-Pi isn't consistent about the
+    // apostrophe in species dir names, which is why a bird like Anna's
+    // Hummingbird could 404 while every other species played fine.
+    $norm = function (string $s): string {
+        return preg_replace('/[^a-z0-9]/', '', strtolower($s));
+    };
+    $want = $norm($common);
     $dates = scandir($rootDir, SCANDIR_SORT_DESCENDING);
     if (!$dates) return null;
     foreach ($dates as $date) {
         if ($date[0] === '.') continue;
-        $speciesDir = "$rootDir/$date/$common";
-        if (!is_dir($speciesDir)) continue;
+        $dayDir = "$rootDir/$date";
+        if (!is_dir($dayDir)) continue;
+        $speciesDir = null;
+        foreach (scandir($dayDir) as $sub) {
+            if ($sub[0] === '.' || !is_dir("$dayDir/$sub")) continue;
+            if ($norm($sub) === $want) { $speciesDir = "$dayDir/$sub"; break; }
+        }
+        if ($speciesDir === null) continue;
         $files = scandir($speciesDir, SCANDIR_SORT_DESCENDING);
         if (!$files) continue;
         foreach ($files as $f) {
-            if (substr($f, -4) === '.mp3') {
+            // Skip zero-byte / truncated files a purge may have left behind.
+            if (substr($f, -4) === '.mp3' && @filesize("$speciesDir/$f") >= 64) {
                 return "$speciesDir/$f";
             }
         }
