@@ -1,0 +1,13 @@
+{
+  "name": "Central North America Artwork Pack",
+  "version": "1.0.0",
+  "author": "Justin G. (InspectaG)",
+  "species": 511,
+  "illustrations": 1022,
+  "transparent": true,
+  "cutouts": true,
+  "sketches": true,
+  "references": false,
+  "generated_with": "AvianVisitors",
+  "notes": "Reference images intentionally omitted to reduce repository size."
+}
