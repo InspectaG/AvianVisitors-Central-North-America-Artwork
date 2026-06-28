@@ -1083,6 +1083,37 @@
     return 13;
   }
 
+  function renderStatsActivityClock() {
+    var counts = (STATS.byHour || []).slice(0, 24).map(function (n) { return +n || 0; });
+    while (counts.length < 24) counts.push(0);
+    var total = counts.reduce(function (sum, n) { return sum + n; }, 0);
+    if (!total) {
+      return ''
+        + '<section class="stats-clock-panel" data-empty="true">'
+        +   '<div class="stats-clock-copy">'
+        +     '<h3>Activity Clock</h3>'
+        +     '<small>any bird, last 30 days</small>'
+        +     '<strong>No hourly detections yet</strong>'
+        +     '<span class="stats-clock-detail">the clock will fill in as BirdNET logs calls</span>'
+        +   '</div>'
+        + '</section>';
+    }
+    var peakHour = 0;
+    for (var i = 1; i < 24; i += 1) {
+      if (counts[i] > counts[peakHour]) peakHour = i;
+    }
+    return ''
+      + '<section class="stats-clock-panel">'
+      +   '<div class="stats-clock-copy">'
+      +     '<h3>Activity Clock</h3>'
+      +     '<small>any bird, last 30 days</small>'
+      +     '<strong>' + fmtHourRange(peakHour) + '</strong>'
+      +     '<span class="stats-clock-detail">' + fmtN(total) + ' detections &middot; peak hour has ' + fmtN(counts[peakHour]) + '</span>'
+      +   '</div>'
+      +   '<div class="stats-hour-clock" aria-hidden="true">' + renderBestTimeClock(counts, peakHour) + '</div>'
+      + '</section>';
+  }
+
   function renderStatsRecentPanel(tl, rows) {
     tl.classList.remove('is-mobile');
     tl.classList.remove('is-recent-list');
@@ -1126,6 +1157,7 @@
 
     tl.innerHTML = ''
       + '<div class="stats-recent-panel">'
+      +   renderStatsActivityClock()
       +   '<div class="stats-recent-head">'
       +     '<h3>Recent Calls</h3>'
       +     '<small>newest first, with ' + windowTotalLabel(currentHours) + ' total</small>'

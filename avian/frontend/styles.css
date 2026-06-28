@@ -723,6 +723,66 @@
     display: flex;
     flex-direction: column;
   }
+  .stats-clock-panel {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(128px, 168px);
+    gap: 16px;
+    align-items: center;
+    margin: 0 0 18px;
+    padding: 12px 12px 10px;
+    border-radius: 8px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .stats-clock-panel[data-empty="true"] {
+    grid-template-columns: 1fr;
+  }
+  .stats-clock-copy {
+    min-width: 0;
+  }
+  .stats-clock-copy h3 {
+    font: 700 12.5px ui-monospace, Menlo, monospace;
+    color: var(--ink);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0 0 1px;
+    border-left: 2px solid var(--accent);
+    padding-left: 10px;
+  }
+  .stats-clock-copy small {
+    display: block;
+    font: 10.75px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+    margin-left: 12px;
+  }
+  .stats-clock-copy strong {
+    display: block;
+    margin: 9px 0 3px;
+    font: 700 22px/1.05 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .stats-clock-detail {
+    display: block;
+    font: 10px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  .stats-hour-clock {
+    min-width: 0;
+    aspect-ratio: 1;
+    align-self: center;
+    justify-self: end;
+    width: 100%;
+    max-width: 168px;
+  }
+  .stats-hour-clock .best-time-polar {
+    width: 100%;
+  }
+  .stats-hour-clock .polar-labels text {
+    font-size: 8px;
+  }
   .stats-recent-head {
     flex: 0 0 auto;
     margin-bottom: 8px;
@@ -2041,6 +2101,15 @@
     display: none;
   }
   @media (max-width: 700px) {
+    .stats-clock-panel {
+      grid-template-columns: 1fr;
+      gap: 10px;
+      text-align: left;
+    }
+    .stats-hour-clock {
+      justify-self: center;
+      max-width: 238px;
+    }
     .modal-best-time {
       grid-template-columns: 1fr;
       gap: 10px;
