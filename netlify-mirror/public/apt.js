@@ -1083,11 +1083,20 @@
     return 13;
   }
 
-  function renderStatsActivityClock() {
+  function statsActivityProfile() {
     var counts = (STATS.byHour || []).slice(0, 24).map(function (n) { return +n || 0; });
     while (counts.length < 24) counts.push(0);
     var total = counts.reduce(function (sum, n) { return sum + n; }, 0);
-    if (!total) {
+    var peakHour = 0;
+    for (var i = 1; i < 24; i += 1) {
+      if (counts[i] > counts[peakHour]) peakHour = i;
+    }
+    return { counts: counts, total: total, peakHour: total ? peakHour : null };
+  }
+
+  function renderStatsActivityClock() {
+    var p = statsActivityProfile();
+    if (!p.total) {
       return ''
         + '<section class="stats-clock-panel" data-empty="true">'
         +   '<div class="stats-clock-copy">'
@@ -1098,20 +1107,61 @@
         +   '</div>'
         + '</section>';
     }
-    var peakHour = 0;
-    for (var i = 1; i < 24; i += 1) {
-      if (counts[i] > counts[peakHour]) peakHour = i;
-    }
     return ''
-      + '<section class="stats-clock-panel">'
+      + '<section class="stats-clock-panel" role="button" tabindex="0" aria-label="Open large activity clock">'
       +   '<div class="stats-clock-copy">'
       +     '<h3>Activity Clock</h3>'
       +     '<small>any bird, last 30 days</small>'
-      +     '<strong>' + fmtHourRange(peakHour) + '</strong>'
-      +     '<span class="stats-clock-detail">' + fmtN(total) + ' detections &middot; peak hour has ' + fmtN(counts[peakHour]) + '</span>'
+      +     '<strong>' + fmtHourRange(p.peakHour) + '</strong>'
+      +     '<span class="stats-clock-detail">' + fmtN(p.total) + ' detections &middot; peak hour has ' + fmtN(p.counts[p.peakHour]) + '</span>'
       +   '</div>'
-      +   '<div class="stats-hour-clock" aria-hidden="true">' + renderBestTimeClock(counts, peakHour) + '</div>'
+      +   '<div class="stats-hour-clock" aria-hidden="true">' + renderBestTimeClock(p.counts, p.peakHour) + '</div>'
       + '</section>';
+  }
+
+  function ensureStatsClockZoomModal() {
+    var existing = document.getElementById('stats-clock-zoom-modal');
+    if (existing) return existing;
+    var modal = document.createElement('div');
+    modal.id = 'stats-clock-zoom-modal';
+    modal.className = 'clock-zoom-modal';
+    modal.setAttribute('aria-hidden', 'true');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-labelledby', 'statsClockZoomTitle');
+    modal.innerHTML = ''
+      + '<div class="modal-backdrop" data-clock-close="1"></div>'
+      + '<article class="clock-zoom-card">'
+      +   '<button class="modal-close" type="button" aria-label="Close" data-clock-close="1">×</button>'
+      +   '<div class="clock-zoom-copy">'
+      +     '<h2 id="statsClockZoomTitle">Activity Clock</h2>'
+      +     '<small id="statsClockZoomSub">any bird, last 30 days</small>'
+      +     '<strong id="statsClockZoomPeak">-</strong>'
+      +     '<span id="statsClockZoomDetail">-</span>'
+      +   '</div>'
+      +   '<div class="clock-zoom-face" id="statsClockZoomFace"></div>'
+      + '</article>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function (ev) {
+      if (ev.target.dataset && ev.target.dataset.clockClose === '1') closeStatsClockZoom();
+    });
+    return modal;
+  }
+
+  function openStatsClockZoom() {
+    var p = statsActivityProfile();
+    if (!p.total) return;
+    var modal = ensureStatsClockZoomModal();
+    document.getElementById('statsClockZoomPeak').textContent = fmtHourRange(p.peakHour);
+    document.getElementById('statsClockZoomDetail').textContent = fmtN(p.total) + ' detections · peak hour has ' + fmtN(p.counts[p.peakHour]);
+    document.getElementById('statsClockZoomFace').innerHTML = renderBestTimeClock(p.counts, p.peakHour);
+    modal.setAttribute('aria-hidden', 'false');
+    var close = modal.querySelector('.modal-close');
+    if (close) close.focus();
+  }
+
+  function closeStatsClockZoom() {
+    var modal = document.getElementById('stats-clock-zoom-modal');
+    if (modal) modal.setAttribute('aria-hidden', 'true');
   }
 
   function renderStatsRecentPanel(tl, rows) {
@@ -1174,6 +1224,16 @@
   // ticks on the left, X-axis time labels on the bottom. Always fits
   // the viewport - column widths flex, square size steps down as the
   // species count climbs.
+  function handleStatsClockActivate(ev) {
+    var panel = ev.target && ev.target.closest ? ev.target.closest('.stats-clock-panel') : null;
+    if (!panel || panel.getAttribute('data-empty') === 'true') return;
+    if (ev.type === 'keydown') {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      ev.preventDefault();
+    }
+    openStatsClockZoom();
+  }
+
   function drawHistograms() {
     var tl = document.getElementById('statsTimeline');
     if (!tl) return;
@@ -2995,12 +3055,24 @@
   // About popup: backdrop / close / explore button all carry data-close,
   // which clears the hash and routes through syncRouter -> closeAbout.
   // The masthead eyebrow opens it; Escape dismisses it.
+  var statsTimelineEl = document.getElementById('statsTimeline');
+  if (statsTimelineEl) {
+    statsTimelineEl.addEventListener('click', handleStatsClockActivate);
+    statsTimelineEl.addEventListener('keydown', handleStatsClockActivate);
+  }
+
   document.getElementById('about-modal').addEventListener('click', function (ev) {
     if (ev.target.dataset && ev.target.dataset.close === '1') {
       if (location.hash) { location.hash = ''; } else { closeAbout(); }
     }
   });
   document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' &&
+        document.getElementById('stats-clock-zoom-modal') &&
+        document.getElementById('stats-clock-zoom-modal').getAttribute('aria-hidden') === 'false') {
+      closeStatsClockZoom();
+      return;
+    }
     if (ev.key === 'Escape' &&
         document.getElementById('about-modal').getAttribute('aria-hidden') === 'false') {
       if (location.hash) { location.hash = ''; } else { closeAbout(); }

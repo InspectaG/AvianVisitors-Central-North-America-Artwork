@@ -738,6 +738,16 @@
   .stats-clock-panel[data-empty="true"] {
     grid-template-columns: 1fr;
   }
+  .stats-clock-panel:not([data-empty="true"]) {
+    cursor: zoom-in;
+    transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  }
+  .stats-clock-panel:not([data-empty="true"]):hover,
+  .stats-clock-panel:not([data-empty="true"]):focus-visible {
+    transform: translateY(-1px);
+    box-shadow: var(--recess), 0 12px 30px rgba(26,22,18,0.10);
+    outline: none;
+  }
   .stats-clock-copy {
     min-width: 0;
   }
@@ -1898,6 +1908,97 @@
     transition: color 140ms ease;
   }
   .about-card .about-explore:hover { color: var(--ink); }
+
+  .clock-zoom-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 220ms ease;
+  }
+  .clock-zoom-modal[aria-hidden="false"] {
+    pointer-events: auto;
+    opacity: 1;
+  }
+  .clock-zoom-card {
+    position: relative;
+    width: min(920px, calc(100vw - 48px));
+    max-height: calc(100vh - 48px);
+    display: grid;
+    grid-template-columns: minmax(190px, 0.48fr) minmax(360px, 1fr);
+    gap: clamp(18px, 4vw, 42px);
+    align-items: center;
+    padding: clamp(24px, 4vw, 42px);
+    overflow: auto;
+    border-radius: 14px;
+    background: var(--paper);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,0.6),
+      0 30px 80px rgba(26,22,18,0.22);
+    transform: translate3d(0, 8px, 0) scale(.96);
+    transition: transform 260ms cubic-bezier(.32,.72,.32,1);
+  }
+  .clock-zoom-modal[aria-hidden="false"] .clock-zoom-card {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  .clock-zoom-copy h2 {
+    font: 700 20px/1 ui-monospace, Menlo, monospace;
+    color: var(--ink);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0 0 4px;
+    border-left: 2px solid var(--accent);
+    padding-left: 12px;
+  }
+  .clock-zoom-copy small {
+    display: block;
+    margin-left: 14px;
+    font: 12px/1.35 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+  }
+  .clock-zoom-copy strong {
+    display: block;
+    margin: 18px 0 6px;
+    font: 700 clamp(34px, 5vw, 58px)/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .clock-zoom-copy span {
+    display: block;
+    font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  .clock-zoom-face {
+    min-width: 0;
+    justify-self: center;
+    width: min(62vh, 520px);
+    max-width: 100%;
+    aspect-ratio: 1;
+  }
+  .clock-zoom-face .best-time-polar {
+    width: 100%;
+  }
+  .clock-zoom-face .polar-labels text {
+    font-size: 8.5px;
+  }
+  @media (max-width: 760px) {
+    .clock-zoom-card {
+      grid-template-columns: 1fr;
+      width: min(620px, calc(100vw - 28px));
+      padding: 22px;
+    }
+    .clock-zoom-face {
+      width: min(72vw, 460px);
+    }
+  }
+
   #detail-modal {
     position: fixed; inset: 0; z-index: 50;
     display: flex; align-items: center; justify-content: center;
