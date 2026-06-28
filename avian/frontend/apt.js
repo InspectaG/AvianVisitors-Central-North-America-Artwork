@@ -69,6 +69,120 @@
     }, opts || {}));
   }
 
+  function fmtHourRange(hour) {
+    hour = Math.max(0, Math.min(23, +hour || 0));
+    var start = new Date(Date.UTC(2020, 0, 1, hour, 0, 0));
+    var end = new Date(Date.UTC(2020, 0, 1, (hour + 1) % 24, 0, 0));
+    var opts = { timeZone: 'UTC', hour: 'numeric' };
+    return start.toLocaleTimeString('en-US', opts).replace(/\s/g, '').toLowerCase()
+      + '-' + end.toLocaleTimeString('en-US', opts).replace(/\s/g, '').toLowerCase();
+  }
+
+  function buildTimeProfileFromDetections(dets) {
+    var counts = new Array(24).fill(0);
+    (dets || []).forEach(function (d) {
+      var m = String(d.t || '').match(/^(\d{1,2}):/);
+      if (!m) return;
+      var hour = Math.max(0, Math.min(23, +m[1] || 0));
+      counts[hour] += 1;
+    });
+    var total = counts.reduce(function (sum, n) { return sum + n; }, 0);
+    var bestHour = 0;
+    counts.forEach(function (n, hour) {
+      if (n > counts[bestHour]) bestHour = hour;
+    });
+    return { total: total, best_hour: total ? bestHour : null, hours: counts.map(function (n, hour) { return { hour: hour, n: n }; }) };
+  }
+
+  function normalizeTimeProfile(profile, dets) {
+    var p = profile || buildTimeProfileFromDetections(dets || []);
+    var rows = (p.hours || p.by_hour || []).map(function (r) {
+      return { hour: Math.max(0, Math.min(23, +(r.hour != null ? r.hour : r.h) || 0)), n: +(r.n != null ? r.n : r.detections) || 0 };
+    });
+    var counts = new Array(24).fill(0);
+    rows.forEach(function (r) { counts[r.hour] = r.n; });
+    var total = +(p.total || 0) || counts.reduce(function (sum, n) { return sum + n; }, 0);
+    var bestHour = p.best_hour;
+    if (bestHour == null && total) {
+      bestHour = 0;
+      counts.forEach(function (n, hour) { if (n > counts[bestHour]) bestHour = hour; });
+    }
+    return { total: total, best_hour: bestHour == null ? null : +bestHour, counts: counts };
+  }
+
+  function polarPoint(cx, cy, r, deg) {
+    var rad = (deg * Math.PI) / 180;
+    return { x: cx + Math.cos(rad) * r, y: cy + Math.sin(rad) * r };
+  }
+
+  function polarWedgePath(cx, cy, r, startDeg, endDeg) {
+    var a = polarPoint(cx, cy, r, startDeg);
+    var b = polarPoint(cx, cy, r, endDeg);
+    var large = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+    return 'M ' + cx + ' ' + cy + ' L ' + a.x.toFixed(2) + ' ' + a.y.toFixed(2)
+      + ' A ' + r.toFixed(2) + ' ' + r.toFixed(2) + ' 0 ' + large + ' 1 '
+      + b.x.toFixed(2) + ' ' + b.y.toFixed(2) + ' Z';
+  }
+
+  function hourLabel(hour) {
+    if (hour === 0) return '12am';
+    if (hour < 12) return hour + 'am';
+    if (hour === 12) return '12pm';
+    return (hour - 12) + 'pm';
+  }
+
+  function renderBestTimeClock(counts, peakHour) {
+    var cx = 110, cy = 110, maxR = 72;
+    var maxN = counts.reduce(function (m, n) { return Math.max(m, n); }, 0);
+    var circles = [18, 32, 46, 60, 74].map(function (r) {
+      return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" />';
+    }).join('');
+    var spokes = new Array(24).fill(0).map(function (_, hour) {
+      var p = polarPoint(cx, cy, 78, (hour * 15) - 90);
+      return '<line x1="' + cx + '" y1="' + cy + '" x2="' + p.x.toFixed(2) + '" y2="' + p.y.toFixed(2) + '" />';
+    }).join('');
+    var labels = new Array(24).fill(0).map(function (_, hour) {
+      var p = polarPoint(cx, cy, 96, (hour * 15) - 90);
+      return '<text x="' + p.x.toFixed(2) + '" y="' + p.y.toFixed(2) + '">' + hourLabel(hour) + '</text>';
+    }).join('');
+    var wedges = counts.map(function (n, hour) {
+      if (!n || !maxN) return '';
+      var radius = Math.max(10, (n / maxN) * maxR);
+      var start = (hour * 15) - 90 + 1.5;
+      var end = ((hour + 1) * 15) - 90 - 1.5;
+      var peak = hour === peakHour ? ' data-peak="true"' : '';
+      return '<path d="' + polarWedgePath(cx, cy, radius, start, end) + '"' + peak + '>'
+        + '<title>' + hourLabel(hour) + ': ' + n + '</title></path>';
+    }).join('');
+    return '<svg class="best-time-polar" viewBox="0 0 220 220" role="img" aria-label="Hourly detections">'
+      + '<g class="polar-grid">' + circles + spokes + '</g>'
+      + '<g class="polar-wedges">' + wedges + '</g>'
+      + '<g class="polar-labels">' + labels + '</g>'
+      + '</svg>';
+  }
+
+  function renderBestTime(profile, dets) {
+    var box = document.getElementById('modalBestTime');
+    var label = document.getElementById('modalBestTimeLabel');
+    var detail = document.getElementById('modalBestTimeDetail');
+    var clock = document.getElementById('modalBestTimeClock');
+    if (!box || !label || !detail || !clock) return;
+    var p = normalizeTimeProfile(profile, dets || []);
+    var maxN = p.counts.reduce(function (m, n) { return Math.max(m, n); }, 0);
+    if (!p.total || p.best_hour == null || !maxN) {
+      box.setAttribute('data-empty', 'true');
+      label.textContent = 'Not enough data yet';
+      detail.textContent = 'This will appear after more detections are logged.';
+      clock.innerHTML = '';
+      return;
+    }
+    box.removeAttribute('data-empty');
+    var bestCount = p.counts[p.best_hour] || 0;
+    label.textContent = fmtHourRange(p.best_hour);
+    detail.textContent = 'Total Detect: ' + fmtN(p.total) + ' · peak hour has ' + fmtN(bestCount);
+    clock.innerHTML = renderBestTimeClock(p.counts, p.best_hour);
+  }
+
   function siteParts(ms) {
     var parts = new Intl.DateTimeFormat('en-US', {
       timeZone: SITE_TIME_ZONE,
@@ -307,6 +421,7 @@
     };
   }
   var GRID_STRIDE = 4; // viewport px per occupancy cell; smaller = slower
+  var COLLAGE_RECT_GAP = 4; // rendered-px guard for replaced/stale masks
 
   // Decode and cache each mask once. Sparse cell-list form (only "on"
   // cells) makes collision tests linear in opaque area, not total area.
@@ -413,6 +528,22 @@
       // True if the rendered tile bbox extends past the viewport.
       return tx < 0 || ty < 0 || tx + tile.fullW > W || ty + tile.fullH > H;
     }
+    function rectCollides(tile, tx, ty) {
+      // Backstop for locally replaced bird art: if the precomputed mask
+      // is stale or too optimistic, never allow rendered image boxes to
+      // overlap. The shrink/repack loop below will make room instead.
+      var gap = COLLAGE_RECT_GAP;
+      for (var i = 0; i < placed.length; i++) {
+        var p = placed[i];
+        if (p.x < -1000) continue;
+        if (tx + tile.fullW + gap <= p.x) continue;
+        if (tx >= p.x + p.fullW + gap) continue;
+        if (ty + tile.fullH + gap <= p.y) continue;
+        if (ty >= p.y + p.fullH + gap) continue;
+        return true;
+      }
+      return false;
+    }
 
     var cx = W / 2, cy = H / 2;
     // Largest first so the cluster grows around the anchor.
@@ -468,6 +599,7 @@
           var px = cx + r * ellipseBias * Math.cos(theta) - t.fullW / 2;
           var py = cy + r * Math.sin(theta) - t.fullH / 2;
           if (offGrid(t, px, py)) continue;
+          if (rectCollides(t, px, py)) continue;
           if (collides(t, px, py)) continue;
           // Distance to existing cluster centre of mass + small noise.
           var dxx = (px + t.fullW / 2 - comX);
@@ -2256,6 +2388,7 @@
       document.getElementById('modalWindowLbl').textContent = windowLabel(currentHours);
     }
     document.getElementById('modalFirstSeen').textContent = '-';
+    renderBestTime(null, []);
     document.getElementById('modalRarity').textContent = '-';
     document.getElementById('modalRarity').classList.remove('rare');
     document.getElementById('modalDesc').textContent = 'Loading description...';
@@ -2297,6 +2430,7 @@
       rarEl.textContent = rar;
       if (rar === 'rare') rarEl.classList.add('rare');
       var dets = j.detections || [];
+      renderBestTime(j.time_profile, dets);
       if (j.audio_private) {
         document.getElementById('modalRecCount').textContent = 'private';
         document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Audio clips stay private on the local BirdNET-Pi.</li>';

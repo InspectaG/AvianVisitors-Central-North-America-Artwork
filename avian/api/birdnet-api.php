@@ -137,7 +137,32 @@ switch ($action) {
         . "FROM detections WHERE Sci_Name = :sn",
           [':sn' => $sci]
         );
-        echo json_encode(['sci' => $sci, 'summary' => $summary, 'detections' => $detections]);
+        $byHour = rows($db,
+          "SELECT CAST(strftime('%H', Time) AS INT) AS hour, COUNT(*) AS n "
+        . "FROM detections WHERE Sci_Name = :sn GROUP BY hour ORDER BY hour",
+          [':sn' => $sci]
+        );
+        $bestHour = null;
+        $bestCount = 0;
+        $profileTotal = 0;
+        foreach ($byHour as $h) {
+            $n = (int)($h['n'] ?? 0);
+            $profileTotal += $n;
+            if ($n > $bestCount) {
+                $bestCount = $n;
+                $bestHour = (int)$h['hour'];
+            }
+        }
+        echo json_encode([
+            'sci' => $sci,
+            'summary' => $summary,
+            'detections' => $detections,
+            'time_profile' => [
+                'total' => $profileTotal,
+                'best_hour' => $bestHour,
+                'hours' => $byHour,
+            ],
+        ]);
         break;
     }
 

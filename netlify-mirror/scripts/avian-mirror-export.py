@@ -200,6 +200,16 @@ def snapshot(db_path, audio_root=AUDIO_ROOT):
             """,
             (sci,),
         )
+        time_rows = rows(
+            con,
+            """
+            SELECT CAST(strftime('%H', Time) AS INT) AS hour, COUNT(*) AS n
+            FROM detections WHERE Sci_Name = ? GROUP BY hour ORDER BY hour
+            """,
+            (sci,),
+        )
+        profile_total = sum(int(r.get("n") or 0) for r in time_rows)
+        best = max(time_rows, key=lambda r: int(r.get("n") or 0), default=None)
         audio = audio_by_sci.get(sci)
         if audio and summary:
             summary["public_audio"] = audio
@@ -209,6 +219,11 @@ def snapshot(db_path, audio_root=AUDIO_ROOT):
             "public_audio": audio,
             "detections": [],
             "audio_private": True,
+            "time_profile": {
+                "total": profile_total,
+                "best_hour": int(best["hour"]) if best else None,
+                "hours": time_rows,
+            },
         }
 
     data = {

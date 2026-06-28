@@ -1969,6 +1969,89 @@
     color: var(--ink-soft); letter-spacing: 0.12em;
     text-transform: uppercase;
   }
+  .modal-best-time {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(190px, 1.08fr);
+    gap: 18px;
+    align-items: center;
+    margin: -4px 0 16px;
+    padding: 12px;
+    background: var(--paper-2);
+    border-radius: 6px;
+    box-shadow: var(--recess);
+  }
+  .best-time-copy {
+    min-width: 0;
+  }
+  .best-time-copy .k,
+  .best-time-copy .v {
+    display: block;
+    font: 8.5px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .best-time-copy strong {
+    display: block;
+    margin: 5px 0 4px;
+    font: 800 22px/1 ui-serif, Georgia, serif;
+    color: var(--ink);
+    letter-spacing: 0;
+  }
+  .best-time-copy .v {
+    text-transform: none;
+    letter-spacing: 0.04em;
+    line-height: 1.35;
+  }
+  .best-time-clock {
+    min-width: 0;
+    aspect-ratio: 1;
+    align-self: center;
+  }
+  .best-time-polar {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+  .polar-grid circle,
+  .polar-grid line {
+    fill: none;
+    stroke: rgba(126,132,145,0.16);
+    stroke-width: 1;
+  }
+  .polar-wedges path {
+    fill: #3f8759;
+    opacity: 0.93;
+  }
+  .polar-wedges path[data-peak="true"] {
+    fill: var(--accent-2);
+    opacity: 1;
+  }
+  .polar-labels text {
+    fill: #7e8491;
+    font: 600 8.5px/1 ui-monospace, Menlo, monospace;
+    text-anchor: middle;
+    dominant-baseline: middle;
+  }
+  .modal-best-time[data-empty="true"] {
+    grid-template-columns: 1fr;
+  }
+  .modal-best-time[data-empty="true"] .best-time-clock {
+    display: none;
+  }
+  @media (max-width: 700px) {
+    .modal-best-time {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .best-time-clock {
+      max-width: 260px;
+      width: 100%;
+      justify-self: center;
+    }
+  }
+
   .modal-info .desc {
     font: 13px/1.55 ui-serif, Georgia, serif;
     color: var(--ink); margin: 0 0 14px;
