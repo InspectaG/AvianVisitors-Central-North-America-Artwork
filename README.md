@@ -1,54 +1,37 @@
-# Avian Visitors
+# Avian Visitors - Central / North America Artwork Edition
 
-A BirdNET-Pi display that turns recent detections into an illustrated bird collage.
+A BirdNET-Pi display that turns recent detections into an illustrated bird collage, a browsable bird atlas, and a local guide to when each species is most likely to be seen or heard.
 
-This is a fork of the [Twarner491/AvianVisitors](https://github.com/Twarner491/AvianVisitors) awesome project. The original README is saved as [`README.upstream.md`](README.upstream.md). This fork keeps the local Pi display, but adds a secure public-facing mirror without admin controls. It also adds a Central Florida 36-bird art pack, increases collage illustration sizing across devices, and redesigns the Stats page around recent calls.
+This is a fork of the [Twarner491/AvianVisitors](https://github.com/Twarner491/AvianVisitors) project, which itself builds on the BirdNET-Pi ecosystem. The original README is saved as [`README.upstream.md`](README.upstream.md). This edition keeps the local Pi display and public mirror workflow, but adds a broad Central / North America artwork pack, a new Atlas best-time clock, safer collage packing for replaced artwork, and a read-only public mirror path.
+
+![Atlas detail modal showing the best-time clock dial for Northern Cardinal](docs/avian-best-time-clock.png)
 
 ## What changed
 
-- Added a secure, public-facing mirror without admin controls, including a [`netlify-mirror`](netlify-mirror) package for easy deployment on Netlify. Non-Netlify setup notes are also included below.
-- Added a 36-species Central Florida illustration pack for birds common around ponds, yards, and wetlands in the region. The cutouts live in [`avian/assets/illustrations`](avian/assets/illustrations), with matching sizing data in the frontend.
-- Increased the bird illustration sizing so the collage uses more of the screen on desktop, tablet, and phone layouts.
-- Redesigned the Stats page for all devices around a recent-calls list sorted by latest detection time, with each bird's call total shown beside it. Period and top-species summaries appear below the recent list.
+- Added a Central / North America bird illustration pack under [`avian/assets/illustrations`](avian/assets/illustrations), with perched and alternate-pose artwork for many additional species.
+- Added an Atlas detail panel that shows the best time to see or hear each bird based on that species' previous BirdNET detections.
+- Added a radial 24-hour clock dial inspired by BirdNET-Pi's existing hourly Plotly chart. The darkest wedge marks the peak detection hour, while the smaller green wedges show other active hours.
+- Extended the local `birdnet-api.php?action=species` endpoint with a `time_profile` payload so the UI can calculate species-specific activity patterns from `birds.db`.
+- Updated the Netlify mirror exporter so public mirror snapshots can include the same species time-profile data.
+- Tightened the collage layout with a rendered-image guard so replaced regional artwork is less likely to overlap when masks are stale or optimistic.
+- Kept the public mirror read-only: no admin tools, no direct Pi exposure, and no private audio by default.
 
-The 36-species Central Florida pack includes, in eBird taxonomic order:
+## New Atlas best-time clock
 
-- Black-bellied Whistling-Duck
-- Common Gallinule
-- American Coot
-- Limpkin
-- Sandhill Crane
-- Wilson's Snipe
-- Lesser Yellowlegs
-- Greater Yellowlegs
-- Least Sandpiper
-- Wood Stork
-- Anhinga
-- White Ibis
-- Glossy Ibis
-- Tricolored Heron
-- Swallow-tailed Kite
-- Barred Owl
-- Red-bellied Woodpecker
-- Eastern Phoebe
-- Great Crested Flycatcher
-- White-eyed Vireo
-- Yellow-throated Vireo
-- Red-eyed Vireo
-- Blue Jay
-- Fish Crow
-- Carolina Chickadee
-- Tufted Titmouse
-- Gray Catbird
-- Brown Thrasher
-- Eastern Bluebird
-- Eastern Meadowlark
-- Common Grackle
-- Boat-tailed Grackle
-- Northern Parula
-- Yellow-throated Warbler
-- Prairie Warbler
-- Northern Cardinal
+Clicking a bird in the Atlas opens a detail modal with the illustration, detection counts, Wikipedia/eBird links, recordings on the local Pi, and now a **best time to see/hear** section.
+
+The clock uses all previous detections for that species. It groups detections by hour, finds the strongest hour, and renders a compact circular histogram:
+
+- The headline shows the peak hour window, such as `7am-8am`.
+- The radial wedges show all hours when the bird has been detected.
+- The darkest wedge marks the most active hour.
+- The total detection count gives context for how much history supports the recommendation.
+
+The result is a more personal Atlas: instead of only showing which birds have visited, it also answers, "When should I go look or listen for this species here?"
+
+## Artwork edition notes
+
+This branch replaces and expands the bird artwork used by the collage and Atlas. The artwork set is intended for Central and North America-focused BirdNET-Pi installations, while still preserving the core AvianVisitors UI and deployment model.
 
 ## Local Pi display
 
