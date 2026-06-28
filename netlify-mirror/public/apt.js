@@ -928,6 +928,7 @@
     timeseries: null,   // ./avian/api/birdnet-api.php?action=timeseries (daily + hourly aggregates)
     firstseen: null,    // ./avian/api/birdnet-api.php?action=firstseen (newest lifelist additions)
     recent: null,       // ./avian/api/birdnet-api.php?action=recent&hours=N (refetched on picker change)
+    ebirdNearby: null,  // ./avian/api/birdnet-api.php?action=ebird_nearby (recent eBird reports near the Pi)
     overnight: null,    // 9 PM-5 AM species summary for the active stats window
   };
 
@@ -942,6 +943,64 @@
   var speciesTotals = {};
   function speciesTotal(s) {
     return +(s && (s.total != null ? s.total : s.n)) || 0;
+  }
+
+  function ebirdNearbyFor(sci) {
+    var nearby = DATA.ebirdNearby;
+    return nearby && nearby.species ? nearby.species[sci] : null;
+  }
+  function ebirdNearbyLabel(info) {
+    if (!info) return '';
+    var days = info.days_ago;
+    if (days === 0) return 'reported today';
+    if (days === 1) return 'reported yesterday';
+    if (days != null && days <= 30) return 'reported ' + days + 'd ago';
+    return 'reported nearby';
+  }
+  function renderEbirdCardBadge(sci) {
+    var nearby = DATA.ebirdNearby;
+    if (!nearby || nearby.configured === false) return '';
+    var info = ebirdNearbyFor(sci);
+    if (!info) return '<div class="ebird-nearby-badge" data-state="quiet">no recent eBird report</div>';
+    return '<div class="ebird-nearby-badge" data-state="seen">nearby now · ' + ebirdNearbyLabel(info) + '</div>';
+  }
+  function refreshOpenModalEbirdNearby() {
+    var modal = document.getElementById('detail-modal');
+    if (!modal || modal.getAttribute('aria-hidden') !== 'false') return;
+    var sci = (document.getElementById('modalSci').textContent || '').trim();
+    if (sci) renderEbirdNearby(ebirdNearbyFor(sci));
+  }
+
+  function renderEbirdNearby(info) {
+    var box = document.getElementById('modalEbirdNearby');
+    var label = document.getElementById('modalEbirdNearbyLabel');
+    var detail = document.getElementById('modalEbirdNearbyDetail');
+    if (!box || !label || !detail) return;
+    var nearby = DATA.ebirdNearby;
+    box.removeAttribute('data-state');
+    if (!nearby) {
+      label.textContent = 'Checking eBird...';
+      detail.textContent = 'Recent reports near your BirdNET location.';
+      return;
+    }
+    if (nearby.configured === false) {
+      box.setAttribute('data-state', 'empty');
+      label.textContent = 'eBird not configured';
+      detail.textContent = nearby.message || 'Set EBIRD_API_KEY on the Pi to enable nearby reports.';
+      return;
+    }
+    if (!info) {
+      box.setAttribute('data-state', 'quiet');
+      label.textContent = 'No recent nearby report';
+      detail.textContent = 'No eBird reports within ' + (nearby.dist_km || 25) + ' km in the last ' + (nearby.back_days || 14) + ' days.';
+      return;
+    }
+    box.setAttribute('data-state', 'seen');
+    label.textContent = 'Reported nearby';
+    var bits = [ebirdNearbyLabel(info)];
+    if (info.location) bits.push(info.location);
+    if (+info.reports > 1) bits.push(fmtN(+info.reports) + ' reports');
+    detail.textContent = bits.join(' · ');
   }
 
   function fetchJson(url) {
@@ -1651,6 +1710,7 @@
         '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
           + ICON_PLAY + '<span>play</span>'
         + '</button>' : '';
+      var ebirdBadge = renderEbirdCardBadge(s.sci);
       // The "all time" window makes the windowed count identical to the
       // all-time count - collapse to a single stat rather than print the
       // same number twice. Otherwise label the count with its span.
@@ -1667,6 +1727,7 @@
         +   '<div class="spectro-wrap" aria-hidden="true"></div>'
         +   '<h3>' + s.com + '</h3>'
         +   '<div class="sci">' + s.sci + '</div>'
+        +   ebirdBadge
         +   lastHeard
         +   '<div class="actions">'
         +     playChip
@@ -1828,6 +1889,17 @@
       })
       .catch(function (e) { console.warn('recent fetch failed', e); });
   }
+  function refreshEbirdNearby() {
+    return fetchJson(apiUrl('birdnet-api.php?action=ebird_nearby&dist=25&back=14'))
+      .then(function (j) {
+        DATA.ebirdNearby = j;
+        renderAtlas();
+        refreshOpenModalEbirdNearby();
+        return j;
+      })
+      .catch(function (e) { console.warn('eBird nearby fetch failed', e); return null; });
+  }
+
   function refreshAll() {
     var forHours = currentHours;
     return Promise.all([
@@ -1849,6 +1921,7 @@
       renderTimeIndependent();
       renderCollageFromData();
       refreshOvernightStats();
+      refreshEbirdNearby();
     });
   }
 
@@ -2481,6 +2554,7 @@
     }
     document.getElementById('modalFirstSeen').textContent = '-';
     renderBestTime(null, []);
+    renderEbirdNearby(null);
     document.getElementById('modalRarity').textContent = '-';
     document.getElementById('modalRarity').classList.remove('rare');
     document.getElementById('modalDesc').textContent = 'Loading description...';
@@ -2523,6 +2597,7 @@
       if (rar === 'rare') rarEl.classList.add('rare');
       var dets = j.detections || [];
       renderBestTime(j.time_profile, dets);
+      renderEbirdNearby(ebirdNearbyFor(sci));
       if (j.audio_private) {
         document.getElementById('modalRecCount').textContent = 'private';
         document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Audio clips stay private on the local BirdNET-Pi.</li>';

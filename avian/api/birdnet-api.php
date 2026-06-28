@@ -9,6 +9,7 @@
 //   species     - &sci=<sci_name>: per-species detail page
 //   timeseries  - &days=N: daily detection counts per species
 //   firstseen   - every species' earliest detection
+//   ebird_nearby - eBird recent nearby reports, matched by scientific name
 //
 // Default LAN deploy ships without auth. If you've exposed the Pi via
 // Cloudflare or a tunnel, add a Caddy `basic_auth` matcher around the
@@ -53,6 +54,65 @@ function rows(SQLite3 $db, string $sql, array $bind = []): array {
 function one(SQLite3 $db, string $sql, array $bind = []) {
     $r = rows($db, $sql, $bind);
     return $r[0] ?? null;
+}
+
+function read_birdnet_conf(string $path): array {
+    if (!is_readable($path)) return [];
+    $out = [];
+    foreach (file($path, FILE_IGNORE_NEW_LINES) as $line) {
+        if (!$line || $line[0] === '#') continue;
+        if (preg_match('/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i', $line, $m)) {
+            $val = trim($m[2]);
+            if (strlen($val) >= 2 && $val[0] === '"' && substr($val, -1) === '"') {
+                $val = substr($val, 1, -1);
+            }
+            $out[$m[1]] = $val;
+        }
+    }
+    return $out;
+}
+
+function ebird_token(array $conf): string {
+    foreach (['EBIRD_API_KEY', 'EBIRD_TOKEN', 'EBIRD_API_TOKEN'] as $k) {
+        $v = getenv($k);
+        if (is_string($v) && trim($v) !== '') return trim($v);
+        if (isset($conf[$k]) && trim((string)$conf[$k]) !== '') return trim((string)$conf[$k]);
+    }
+    return '';
+}
+
+function http_json_get(string $url, array $headers, int $timeout = 8): array {
+    $headerLines = [];
+    foreach ($headers as $k => $v) $headerLines[] = $k . ': ' . $v;
+    $ctx = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => implode("\r\n", $headerLines),
+            'timeout' => $timeout,
+            'ignore_errors' => true,
+        ],
+    ]);
+    $raw = @file_get_contents($url, false, $ctx);
+    $status = 0;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
+        $status = (int)$m[1];
+    }
+    if ($raw === false) return ['ok' => false, 'status' => $status, 'error' => 'request failed'];
+    $data = json_decode($raw, true);
+    if ($status < 200 || $status >= 300) return ['ok' => false, 'status' => $status, 'error' => 'eBird returned HTTP ' . $status];
+    if (!is_array($data)) return ['ok' => false, 'status' => $status, 'error' => 'bad eBird json'];
+    return ['ok' => true, 'status' => $status, 'data' => $data];
+}
+
+function days_since_obs(?string $obsDt): ?int {
+    if (!$obsDt) return null;
+    try {
+        $d = new DateTime($obsDt);
+        $today = new DateTime('now');
+        return max(0, (int)$today->diff($d)->format('%r%a') * -1);
+    } catch (Throwable $e) {
+        return null;
+    }
 }
 
 $action = $_GET['action'] ?? 'stats';
@@ -191,6 +251,94 @@ switch ($action) {
             'by_hour' => $by_hour,
             'as_of'   => date('c'),
         ]);
+        break;
+    }
+
+
+    case 'ebird_nearby': {
+        $confPath = dirname(__DIR__, 2) . '/birdnet.conf';
+        $conf = read_birdnet_conf($confPath);
+        $lat = isset($conf['LATITUDE']) ? (float)$conf['LATITUDE'] : NAN;
+        $lng = isset($conf['LONGITUDE']) ? (float)$conf['LONGITUDE'] : NAN;
+        $token = ebird_token($conf);
+        $dist = max(1, min(50, (int)($_GET['dist'] ?? 25)));
+        $back = max(1, min(30, (int)($_GET['back'] ?? 14)));
+
+        if ($token === '') {
+            echo json_encode(['configured' => false, 'species' => new stdClass(), 'message' => 'Set EBIRD_API_KEY on the Pi to enable nearby reports.']);
+            break;
+        }
+        if (!is_finite($lat) || !is_finite($lng) || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            echo json_encode(['configured' => false, 'species' => new stdClass(), 'message' => 'Set LATITUDE and LONGITUDE in birdnet.conf to enable nearby reports.']);
+            break;
+        }
+
+        $cacheKey = sprintf('avian-ebird-nearby-%s-%s-%d-%d.json', round($lat, 3), round($lng, 3), $dist, $back);
+        $cachePath = sys_get_temp_dir() . '/' . preg_replace('/[^A-Za-z0-9_.-]/', '-', $cacheKey);
+        $cacheTtl = 6 * 60 * 60;
+        if (is_readable($cachePath) && (time() - filemtime($cachePath)) < $cacheTtl) {
+            $cached = json_decode((string)file_get_contents($cachePath), true);
+            if (is_array($cached)) {
+                $cached['cache'] = 'hit';
+                echo json_encode($cached);
+                break;
+            }
+        }
+
+        $url = 'https://api.ebird.org/v2/data/obs/geo/recent?' . http_build_query([
+            'lat' => $lat,
+            'lng' => $lng,
+            'dist' => $dist,
+            'back' => $back,
+            'includeProvisional' => 'true',
+        ]);
+        $resp = http_json_get($url, [
+            'X-eBirdApiToken' => $token,
+            'Accept' => 'application/json',
+        ]);
+        if (!$resp['ok']) {
+            http_response_code(502);
+            echo json_encode(['configured' => true, 'species' => new stdClass(), 'error' => $resp['error'] ?? 'eBird request failed']);
+            break;
+        }
+
+        $bySci = [];
+        foreach ($resp['data'] as $obs) {
+            if (!is_array($obs)) continue;
+            $sci = trim((string)($obs['sciName'] ?? ''));
+            if ($sci === '') continue;
+            $existing = $bySci[$sci] ?? null;
+            $obsDt = (string)($obs['obsDt'] ?? '');
+            $reports = $existing ? ((int)$existing['reports'] + 1) : 1;
+            $howMany = (int)($obs['howMany'] ?? 0);
+            $count = ($existing ? (int)$existing['count'] : 0) + max(0, $howMany);
+            if (!$existing || strcmp($obsDt, (string)$existing['last_observed']) > 0) {
+                $bySci[$sci] = [
+                    'sci' => $sci,
+                    'com' => (string)($obs['comName'] ?? ''),
+                    'species_code' => (string)($obs['speciesCode'] ?? ''),
+                    'last_observed' => $obsDt,
+                    'days_ago' => days_since_obs($obsDt),
+                    'location' => (string)($obs['locName'] ?? ''),
+                    'reports' => $reports,
+                    'count' => $count,
+                ];
+            } else {
+                $bySci[$sci]['reports'] = $reports;
+                $bySci[$sci]['count'] = $count;
+            }
+        }
+
+        $out = [
+            'configured' => true,
+            'dist_km' => $dist,
+            'back_days' => $back,
+            'species' => $bySci,
+            'as_of' => date('c'),
+            'cache' => 'miss',
+        ];
+        @file_put_contents($cachePath, json_encode($out));
+        echo json_encode($out);
         break;
     }
 

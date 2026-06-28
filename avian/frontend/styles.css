@@ -1575,6 +1575,24 @@
     font: italic 11px/1.2 ui-serif, Georgia, serif;
     color: var(--ink-2); margin: 2px 0 0;
   }
+  .ebird-nearby-badge {
+    align-self: flex-start;
+    margin-top: 8px;
+    padding: 4px 7px;
+    border-radius: 4px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+    font: 8.5px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+    color: var(--ink-soft);
+  }
+  .ebird-nearby-badge[data-state="seen"] {
+    color: #3f8759;
+  }
+  .ebird-nearby-badge[data-state="quiet"] {
+    opacity: 0.72;
+  }
   .bird-card .last-heard {
     font: 9.5px/1.2 ui-monospace, Menlo, monospace;
     color: var(--ink-soft);
@@ -2200,6 +2218,34 @@
   }
   .modal-best-time[data-empty="true"] .best-time-clock {
     display: none;
+  }
+  .modal-ebird-nearby {
+    margin: 12px 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .modal-ebird-nearby .k,
+  .modal-ebird-nearby .v {
+    display: block;
+    font: 9.5px/1.35 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.10em;
+    text-transform: lowercase;
+  }
+  .modal-ebird-nearby strong {
+    display: block;
+    margin: 4px 0 2px;
+    font: 700 17px/1.15 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .modal-ebird-nearby[data-state="seen"] strong {
+    color: #3f8759;
+  }
+  .modal-ebird-nearby[data-state="empty"],
+  .modal-ebird-nearby[data-state="quiet"] {
+    opacity: 0.82;
   }
   @media (max-width: 700px) {
     .stats-clock-panel {

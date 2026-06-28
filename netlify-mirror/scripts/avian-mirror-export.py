@@ -241,6 +241,7 @@ def snapshot(db_path, audio_root=AUDIO_ROOT):
         "recent": recent,
         "timeseries": {"days": 30, "daily": daily, "by_hour": by_hour, "as_of": now},
         "firstseen": {"species": firstseen, "as_of": now},
+        "ebird_nearby": {"configured": False, "species": {}, "message": "eBird nearby reports are only available on the live Pi."},
         "species": species,
     }
     return data, audio_uploads

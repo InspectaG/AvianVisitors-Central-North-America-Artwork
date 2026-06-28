@@ -61,6 +61,7 @@ export default async (req: Request) => {
   if (action === "timeseries") return json(snapshot.timeseries || { daily: [], by_hour: [], as_of: snapshot.generated_at });
   if (action === "firstseen") return json(snapshot.firstseen || { species: [], as_of: snapshot.generated_at });
   if (action === "recent") return json(recentFor(snapshot, url.searchParams.get("hours") || "24"));
+  if (action === "ebird_nearby") return json(snapshot.ebird_nearby || { configured: false, species: {}, message: "eBird nearby reports are only available on the live Pi." });
   if (action === "species") {
     const sci = url.searchParams.get("sci") || "";
     const detail = snapshot.species?.[sci];

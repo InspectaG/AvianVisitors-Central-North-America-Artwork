@@ -7,7 +7,7 @@
 <meta name="description" content="A live bird collage from your window.">
 <link rel="icon" type="image/png" href="./favicon.png">
 <link rel="apple-touch-icon" href="./favicon.png">
-<link rel="stylesheet" href="./styles.css?v=20260607-collage-visible-area-v1">
+<link rel="stylesheet" href="./styles.css?v=20260628-ebird-nearby-v1">
 </head>
 <body class="av-local">
 <!-- Pill in the top-left slot, only visible on admin overlays
@@ -165,6 +165,11 @@
           </div>
           <div class="best-time-clock" id="modalBestTimeClock" aria-hidden="true"></div>
         </section>
+        <section class="modal-ebird-nearby" id="modalEbirdNearby" aria-live="polite">
+          <span class="k">eBird nearby</span>
+          <strong id="modalEbirdNearbyLabel">Checking eBird...</strong>
+          <span class="v" id="modalEbirdNearbyDetail">Recent reports near your BirdNET location.</span>
+        </section>
         <p class="desc placeholder" id="modalDesc">Loading description...</p>
         <div class="modal-meta">
           <span class="meta-item"><span class="k">genus</span><span class="v" id="modalGenus">-</span></span>
@@ -218,6 +223,6 @@
   </div>
 </section>
 
-<script src="./apt.js?v=20260607-collage-visible-area-v1"></script>
+<script src="./apt.js?v=20260628-ebird-nearby-v1"></script>
 </body>
 </html>
