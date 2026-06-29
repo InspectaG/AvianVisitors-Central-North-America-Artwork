@@ -1723,6 +1723,8 @@
           + ICON_PLAY + '<span>play</span>'
         + '</button>' : '';
       var ebirdBadge = renderEbirdCardBadge(s.sci);
+      var rarity = rarityInfoForTotal(total);
+      var rarityBadge = '<div class="atlas-rarity-badge" data-rarity="' + rarity.key + '" title="' + rarityExplainer(rarity, total).replace(/"/g, '&quot;') + '">' + rarity.label + '</div>';
       // The "all time" window makes the windowed count identical to the
       // all-time count - collapse to a single stat rather than print the
       // same number twice. Otherwise label the count with its span.
@@ -1733,6 +1735,7 @@
       return ''
         + '<article class="bird-card" data-sci="' + s.sci + '" data-audio="' + audioSrc + '" data-spectro="' + spectroSrc + '">'
         +   '<div class="stat">' + statRows + '</div>'
+        +   rarityBadge
         +   '<div class="img-wrap">'
         +     '<img loading="lazy" decoding="async" src="' + sketchSrc + '" alt="' + s.com + '">'
         +   '</div>'
@@ -2673,8 +2676,10 @@
     renderDetectionCalendar(null, []);
     renderEbirdNearby(null);
     document.getElementById('modalRarity').textContent = '-';
+    document.getElementById('modalRarityDetail').textContent = 'Based on your detections.';
+    document.getElementById('modalRarityPanel').removeAttribute('data-rarity');
+    document.getElementById('modalRarityPanel').removeAttribute('title');
     document.getElementById('modalRarity').classList.remove('epic', 'rare', 'uncommon', 'pedestrian');
-    document.getElementById('modalRarity').removeAttribute('title');
     document.getElementById('modalDesc').textContent = 'Loading description...';
     document.getElementById('modalDesc').classList.add('placeholder');
     document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Loading recordings...</li>';
@@ -2712,10 +2717,14 @@
       var total = speciesTotal(s);
       var rar = rarityInfoForTotal(total);
       var rarEl = document.getElementById('modalRarity');
+      var rarPanel = document.getElementById('modalRarityPanel');
+      var rarExplainer = rarityExplainer(rar, total);
       rarEl.textContent = rar.label;
       rarEl.classList.remove('epic', 'rare', 'uncommon', 'pedestrian');
       rarEl.classList.add(rar.key);
-      rarEl.title = rarityExplainer(rar, total);
+      document.getElementById('modalRarityDetail').textContent = rarExplainer;
+      rarPanel.setAttribute('data-rarity', rar.key);
+      rarPanel.title = rarExplainer;
       var dets = j.detections || [];
       renderBestTime(j.time_profile, dets);
       renderDetectionCalendar(j.daily_profile, dets);

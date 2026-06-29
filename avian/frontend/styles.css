@@ -1622,6 +1622,38 @@
     letter-spacing: 0;
   }
   .bird-card .stat .lbl { display: block; }
+  .atlas-rarity-badge {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    max-width: calc(100% - 110px);
+    padding: 6px 8px 5px;
+    border-radius: 6px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+    color: var(--ink);
+    font: 800 16px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    letter-spacing: 0;
+    text-transform: capitalize;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .atlas-rarity-badge[data-rarity="epic"] {
+    color: #9b2f27;
+    background: rgba(155, 47, 39, 0.08);
+  }
+  .atlas-rarity-badge[data-rarity="rare"] {
+    color: #9b5a16;
+    background: rgba(155, 90, 22, 0.09);
+  }
+  .atlas-rarity-badge[data-rarity="uncommon"] {
+    color: var(--accent-2);
+    background: rgba(63, 135, 89, 0.09);
+  }
+  .atlas-rarity-badge[data-rarity="pedestrian"] {
+    color: var(--ink-soft);
+  }
   .bird-card .img-wrap {
     flex: 1 1 auto; min-height: 0;
     display: flex; align-items: center; justify-content: center;
@@ -2134,6 +2166,12 @@
     display: grid; grid-template-columns: 1fr 1.15fr; gap: 32px;
     align-items: start;
   }
+  .modal-visual {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
   @media (max-width: 700px) {
     .modal-grid { grid-template-columns: 1fr; gap: 22px; }
     .modal-card { padding: 22px; }
@@ -2152,6 +2190,37 @@
     transition: opacity 220ms ease;
   }
   .modal-img img.swapping { opacity: 0; }
+  .modal-rarity-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .modal-rarity-panel .k,
+  .modal-rarity-panel .v {
+    display: block;
+    font: 9.5px/1.35 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.10em;
+    text-transform: lowercase;
+  }
+  .modal-rarity-panel strong {
+    display: block;
+    font: 800 24px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+    text-transform: capitalize;
+  }
+  .modal-rarity-panel strong.epic,
+  .modal-rarity-panel[data-rarity="epic"] strong { color: #9b2f27; }
+  .modal-rarity-panel strong.rare,
+  .modal-rarity-panel[data-rarity="rare"] strong { color: #9b5a16; }
+  .modal-rarity-panel strong.uncommon,
+  .modal-rarity-panel[data-rarity="uncommon"] strong { color: var(--accent-2); }
+  .modal-rarity-panel strong.pedestrian,
+  .modal-rarity-panel[data-rarity="pedestrian"] strong { color: var(--ink); }
   /* Pose toggle - bottom-left corner of the modal sketch, icon strip.
      Same recipe as the time-window slider: recessed paper-2 well, a
      white sliding pill behind the active button (via .seg-pill), and
