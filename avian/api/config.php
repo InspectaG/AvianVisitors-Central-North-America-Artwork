@@ -42,6 +42,7 @@ $ALLOWED = [
     'LATITUDE'           => ['type' => 'float', 'min' => -90,  'max' => 90, 'restart' => true],
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
+    'EBIRD_API_KEY'      => ['type' => 'secret', 'maxlen' => 120],
 ];
 
 function read_conf(string $path): array {
@@ -102,6 +103,17 @@ function safe_string_value(string $v): bool {
     return (bool)preg_match("/^[A-Za-z0-9 _.,'-]*$/u", $v);
 }
 
+function safe_secret_value(string $v): bool {
+    return $v === '' || (bool)preg_match('/^[A-Za-z0-9_.:-]+$/', $v);
+}
+
+function mask_secret(string $v): array {
+    $v = trim($v);
+    if ($v === '') return ['configured' => false, 'masked' => ''];
+    $tail = substr($v, -4);
+    return ['configured' => true, 'masked' => '••••' . $tail];
+}
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
@@ -112,6 +124,7 @@ if ($method === 'GET') {
         $v = $conf[$k];
         if ($spec['type'] === 'float') $v = (float)$v;
         elseif ($spec['type'] === 'int') $v = (int)$v;
+        elseif ($spec['type'] === 'secret') { $out[$k] = mask_secret((string)$v); continue; }
         $out[$k] = $v;
     }
     echo json_encode([
@@ -152,6 +165,10 @@ if ($method === 'POST') {
             // reject anything outside a known-safe punctuation set so a
             // bash metacharacter can't get there even if quote_val regresses.
             if (!safe_string_value($v)) { $errors[$k] = 'invalid characters'; continue; }
+        } elseif ($spec['type'] === 'secret') {
+            $v = trim((string)$v);
+            if (strlen($v) > ($spec['maxlen'] ?? 200)) { $errors[$k] = 'too long'; continue; }
+            if (!safe_secret_value($v)) { $errors[$k] = 'invalid characters'; continue; }
         }
         $updates[$k] = $v;
     }

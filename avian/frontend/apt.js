@@ -2234,6 +2234,7 @@
               { v: 'keep',  label: 'keep' },
               { v: 'purge', label: 'purge' },
             ])
+          + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'used for nearby reports; never shown after save', v.EBIRD_API_KEY)
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'
@@ -2275,6 +2276,25 @@
       + '  </div>'
       + '</div>';
   }
+  function settingsSecret(key, label, hint, state) {
+    state = state || {};
+    var configured = !!state.configured;
+    var masked = state.masked || '';
+    return ''
+      + '<div class="secret-row" data-secret-key="' + key + '">'
+      + '  <div class="head">'
+      + '    <div class="label-block"><span class="label">' + label + '</span>'
+      +       (hint ? '<span class="hint">' + hint + '</span>' : '')
+      + '    </div>'
+      + '    <span class="secret-state" data-secret-state="' + (configured ? 'set' : 'empty') + '">' + (configured ? ('configured ' + masked) : 'not set') + '</span>'
+      + '  </div>'
+      + '  <div class="secret-control">'
+      + '    <input type="password" autocomplete="off" spellcheck="false" placeholder="' + (configured ? 'enter a new key to replace' : 'paste eBird API key') + '" data-key="' + key + '">'
+      + '    <button type="button" data-secret-clear="' + key + '">clear</button>'
+      + '  </div>'
+      + '</div>';
+  }
+
   function settingsSegmented(key, label, hint, val, opts) {
     var btns = opts.map(function (o) {
       return '<button type="button" data-v="' + o.v + '" aria-current="' + (o.v === val ? 'true' : 'false') + '">' + o.label + '</button>';
@@ -2307,6 +2327,28 @@
         setSaveState('change pending');
       });
     });
+    scope.querySelectorAll('.secret-control input').forEach(function (input) {
+      input.addEventListener('input', function () {
+        var v = input.value.trim();
+        if (v) {
+          pending[input.dataset.key] = v;
+          setSaveState('change pending');
+        } else if (pending[input.dataset.key] !== '') {
+          delete pending[input.dataset.key];
+          setSaveState(Object.keys(pending).length ? 'change pending' : '');
+        }
+      });
+    });
+    scope.querySelectorAll('[data-secret-clear]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var key = btn.dataset.secretClear;
+        var row = btn.closest('.secret-row');
+        var input = row ? row.querySelector('input') : null;
+        if (input) input.value = '';
+        pending[key] = '';
+        setSaveState('change pending');
+      });
+    });
     scope.querySelectorAll('.seg').forEach(function (seg) {
       seg.querySelectorAll('button').forEach(function (b) {
         b.addEventListener('click', function () {
@@ -2332,6 +2374,11 @@
         if (res.ok && res.j.ok) {
           pending = {};
           setSaveState('saved ✓', 'ok');
+          if (document.body.classList.contains('admin-on') && adminSect === 'settings') {
+            setTimeout(renderAdminSettings, 400);
+          } else {
+            setTimeout(loadSettings, 400);
+          }
           setTimeout(function () { setSaveState(''); }, 1800);
         } else {
           setSaveState('save failed', 'err');
@@ -2839,6 +2886,7 @@
               { v: 'keep',  label: 'keep' },
               { v: 'purge', label: 'purge' },
             ])
+          + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'used for nearby reports; never shown after save', v.EBIRD_API_KEY)
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'
