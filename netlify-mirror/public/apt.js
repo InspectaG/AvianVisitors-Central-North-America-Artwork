@@ -2446,18 +2446,14 @@
     if (!d) return '-';
     var ms = parseSiteTs((d || '') + ' ' + (t || '00:00:00'));
     if (isNaN(ms)) return d + ' ' + (t || '');
-    var now = Date.now();
-    var ago = Math.floor((now - ms) / 1000);
-    if (ago < 60) return ago + 's ago';
-    if (ago < 3600) return Math.floor(ago / 60) + 'm ago';
-    if (ago < 86400) return Math.floor(ago / 3600) + 'h ago';
-    return Math.floor(ago / 86400) + 'd ago';
+    return fmtSiteTime(ms, { second: '2-digit' });
   }
-  function fmtDateLine(d, t) {
+  function fmtDateLine(d, t, opts) {
     if (!d) return '';
     try {
       var ms = parseSiteTs(d + ' ' + (t || '00:00:00'));
-      return fmtSiteDate(ms) + ' · ' + fmtSiteTime(ms) + ' ' + SITE_TIME_LABEL;
+      var timeOpts = opts && opts.seconds ? { second: '2-digit' } : null;
+      return fmtSiteDate(ms) + ' · ' + fmtSiteTime(ms, timeOpts) + ' ' + SITE_TIME_LABEL;
     } catch (e) { return d + ' ' + (t || ''); }
   }
   function totalDetectionCount() {
@@ -2739,7 +2735,7 @@
         ? dets.map(function (d) {
             return '<li class="rec-row" data-file="' + (d.file || '') + '" data-date="' + (d.d || '') + '">'
               + '<button class="play" type="button" aria-label="play">' + ICON_PLAY + '</button>'
-              + '<span class="when">' + fmtRecTime(d.d, d.t) + '<small>' + fmtDateLine(d.d, d.t) + '</small></span>'
+              + '<span class="when">' + fmtRecTime(d.d, d.t) + '<small>' + fmtDateLine(d.d, d.t, { seconds: true }) + '</small></span>'
               + '<span class="conf">' + ((+d.conf || 0) * 100).toFixed(0) + '%</span>'
               + '<div class="rec-spectro" aria-hidden="true">'
               +   '<div class="rec-spectro-loading">loading spectrogram...</div>'
