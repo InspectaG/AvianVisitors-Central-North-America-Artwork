@@ -571,10 +571,10 @@
     pointer-events: none;
   }
   .collage-rarity-badge[data-rarity="epic"] {
-    color: #9b2f27;
+    color: #b88912;
   }
   .collage-rarity-badge[data-rarity="rare"] {
-    color: #9b5a16;
+    color: #6f4bb8;
   }
   /* Hover pill - surfaces the windowed count for the bird under the
      cursor. Confirms (Anna's-hummingbird-is-#1 paranoia) that the
@@ -1640,12 +1640,12 @@
     text-overflow: ellipsis;
   }
   .atlas-rarity-badge[data-rarity="epic"] {
-    color: #9b2f27;
-    background: rgba(155, 47, 39, 0.08);
+    color: #b88912;
+    background: rgba(184, 137, 18, 0.14);
   }
   .atlas-rarity-badge[data-rarity="rare"] {
-    color: #9b5a16;
-    background: rgba(155, 90, 22, 0.09);
+    color: #6f4bb8;
+    background: rgba(111, 75, 184, 0.12);
   }
   .atlas-rarity-badge[data-rarity="uncommon"] {
     color: var(--accent-2);
@@ -2214,9 +2214,9 @@
     text-transform: capitalize;
   }
   .modal-rarity-panel strong.epic,
-  .modal-rarity-panel[data-rarity="epic"] strong { color: #9b2f27; }
+  .modal-rarity-panel[data-rarity="epic"] strong { color: #b88912; }
   .modal-rarity-panel strong.rare,
-  .modal-rarity-panel[data-rarity="rare"] strong { color: #9b5a16; }
+  .modal-rarity-panel[data-rarity="rare"] strong { color: #6f4bb8; }
   .modal-rarity-panel strong.uncommon,
   .modal-rarity-panel[data-rarity="uncommon"] strong { color: var(--accent-2); }
   .modal-rarity-panel strong.pedestrian,
@@ -2469,8 +2469,8 @@
   }
   .modal-meta .k { letter-spacing: 0.12em; text-transform: uppercase; }
   .modal-meta .v { color: var(--ink); margin-left: 6px; }
-  .modal-meta .v.epic { color: #9b2f27; font-weight: 700; }
-  .modal-meta .v.rare { color: #9b5a16; font-weight: 700; }
+  .modal-meta .v.epic { color: #b88912; font-weight: 700; }
+  .modal-meta .v.rare { color: #6f4bb8; font-weight: 700; }
   .modal-meta .v.uncommon { color: var(--accent-2); }
   .modal-meta .v.pedestrian { color: var(--ink); }
   .modal-recordings {
