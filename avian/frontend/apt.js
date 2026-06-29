@@ -773,7 +773,7 @@
       btn.style.height = r.fullH + 'px';
       var rarity = rarityInfoForSci(s.sci, s.n);
       var badge = (rarity.key === 'epic' || rarity.key === 'rare')
-        ? '<span class="collage-rarity-badge" data-rarity="' + rarity.key + '">' + rarity.label + '</span>'
+        ? '<span class="collage-rarity-badge" data-rarity="' + rarity.key + '">' + rarity.label + rarityLegendHtml() + '</span>'
         : '';
       btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">' + badge;
       r.el = btn;
@@ -1724,7 +1724,7 @@
         + '</button>' : '';
       var ebirdBadge = renderEbirdCardBadge(s.sci);
       var rarity = rarityInfoForTotal(total);
-      var rarityBadge = '<div class="atlas-rarity-badge" data-rarity="' + rarity.key + '" title="' + rarityExplainer(rarity, total).replace(/"/g, '&quot;') + '">' + rarity.label + '</div>';
+      var rarityBadge = '<div class="atlas-rarity-badge" data-rarity="' + rarity.key + '" tabindex="0" title="' + rarityExplainer(rarity, total).replace(/"/g, '&quot;') + '">' + rarity.label + rarityLegendHtml() + '</div>';
       // The "all time" window makes the windowed count identical to the
       // all-time count - collapse to a single stat rather than print the
       // same number twice. Otherwise label the count with its span.
@@ -2479,6 +2479,15 @@
     var pct = Math.max(0.01, info.share * 100).toFixed(info.share < 0.01 ? 2 : 1);
     return fmtN(total) + ' all-time calls · ' + pct + '% of your detections';
   }
+  function rarityLegendHtml() {
+    return '<span class="rarity-legend" role="tooltip" aria-hidden="true">'
+      + '<span class="legend-title">rarity guide</span>'
+      + '<span class="legend-row" data-rarity="epic"><b>Epic</b><em>1 call or under 0.1%</em></span>'
+      + '<span class="legend-row" data-rarity="rare"><b>Rare</b><em>2-3 calls or under 0.5%</em></span>'
+      + '<span class="legend-row" data-rarity="uncommon"><b>Uncommon</b><em>under 2%</em></span>'
+      + '<span class="legend-row" data-rarity="pedestrian"><b>Pedestrian</b><em>frequent visitor</em></span>'
+      + '</span>';
+  }
   function localIsoDate(d) {
     var y = d.getFullYear();
     var m = String(d.getMonth() + 1).padStart(2, '0');
@@ -2675,6 +2684,7 @@
     document.getElementById('modalRarityDetail').textContent = 'Based on your detections.';
     document.getElementById('modalRarityPanel').removeAttribute('data-rarity');
     document.getElementById('modalRarityPanel').removeAttribute('title');
+    document.getElementById('modalRarityPanel').removeAttribute('tabindex');
     document.getElementById('modalRarity').classList.remove('epic', 'rare', 'uncommon', 'pedestrian');
     document.getElementById('modalDesc').textContent = 'Loading description...';
     document.getElementById('modalDesc').classList.add('placeholder');
@@ -2720,7 +2730,9 @@
       rarEl.classList.add(rar.key);
       document.getElementById('modalRarityDetail').textContent = rarExplainer;
       rarPanel.setAttribute('data-rarity', rar.key);
+      rarPanel.setAttribute('tabindex', '0');
       rarPanel.title = rarExplainer;
+      if (!rarPanel.querySelector('.rarity-legend')) rarPanel.insertAdjacentHTML('beforeend', rarityLegendHtml());
       var dets = j.detections || [];
       renderBestTime(j.time_profile, dets);
       renderDetectionCalendar(j.daily_profile, dets);

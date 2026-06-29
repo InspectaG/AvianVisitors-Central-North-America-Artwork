@@ -1636,8 +1636,7 @@
     letter-spacing: 0;
     text-transform: capitalize;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
   }
   .atlas-rarity-badge[data-rarity="epic"] {
     color: #b88912;
@@ -1653,6 +1652,81 @@
   }
   .atlas-rarity-badge[data-rarity="pedestrian"] {
     color: var(--ink-soft);
+  }
+
+  .rarity-legend {
+    position: absolute;
+    z-index: 20;
+    left: 50%;
+    bottom: calc(100% + 9px);
+    transform: translate(-50%, 4px);
+    width: 218px;
+    padding: 10px 11px;
+    border-radius: 8px;
+    background: var(--paper);
+    box-shadow: 0 10px 34px rgba(26,22,18,0.16), inset 0 0 0 1px rgba(26,22,18,0.07);
+    color: var(--ink);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 150ms ease, transform 150ms ease, visibility 150ms ease;
+    text-align: left;
+    text-transform: none;
+    white-space: normal;
+  }
+  .rarity-legend::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 10px;
+    height: 10px;
+    background: var(--paper);
+    box-shadow: 1px 1px 0 rgba(26,22,18,0.05);
+  }
+  .legend-title {
+    display: block;
+    margin-bottom: 8px;
+    font: 700 9px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .legend-row {
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    margin-top: 5px;
+    font: 9.5px/1.2 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
+  }
+  .legend-row b {
+    color: var(--ink);
+    font: 800 12px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    letter-spacing: 0;
+  }
+  .legend-row em {
+    font-style: normal;
+  }
+  .legend-row[data-rarity="epic"] b { color: #b88912; }
+  .legend-row[data-rarity="rare"] b { color: #6f4bb8; }
+  .legend-row[data-rarity="uncommon"] b { color: var(--accent-2); }
+  .legend-row[data-rarity="pedestrian"] b { color: var(--ink-soft); }
+  .atlas-rarity-badge:hover .rarity-legend,
+  .atlas-rarity-badge:focus-visible .rarity-legend,
+  .modal-rarity-panel:hover .rarity-legend,
+  .modal-rarity-panel:focus-visible .rarity-legend,
+  .gtile:hover .collage-rarity-badge .rarity-legend,
+  .gtile:focus-visible .collage-rarity-badge .rarity-legend {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+  .modal-rarity-panel {
+    position: relative;
   }
   .bird-card .img-wrap {
     flex: 1 1 auto; min-height: 0;
