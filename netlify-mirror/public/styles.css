@@ -2252,6 +2252,17 @@
     fill: var(--accent-2);
     opacity: 1;
   }
+  .polar-now line {
+    stroke: #c73b31;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    filter: drop-shadow(0 1px 1px rgba(26,22,18,0.18));
+  }
+  .polar-now circle {
+    fill: #c73b31;
+    stroke: var(--paper);
+    stroke-width: 1.2;
+  }
   .polar-labels text {
     fill: #7e8491;
     font: 600 8.5px/1 ui-monospace, Menlo, monospace;

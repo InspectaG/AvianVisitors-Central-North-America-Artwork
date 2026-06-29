@@ -154,9 +154,17 @@
       return '<path d="' + polarWedgePath(cx, cy, radius, start, end) + '"' + peak + '>'
         + '<title>' + hourLabel(hour) + ': ' + n + '</title></path>';
     }).join('');
+    var now = new Date();
+    var currentHour = now.getHours() + (now.getMinutes() / 60);
+    var currentDeg = (currentHour * 15) - 90;
+    var currentOuter = polarPoint(cx, cy, 82, currentDeg);
+    var currentInner = polarPoint(cx, cy, 8, currentDeg);
+    var currentTitle = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    var currentHand = '<g class="polar-now"><line x1="' + currentInner.x.toFixed(2) + '" y1="' + currentInner.y.toFixed(2) + '" x2="' + currentOuter.x.toFixed(2) + '" y2="' + currentOuter.y.toFixed(2) + '"><title>current time: ' + currentTitle + '</title></line><circle cx="' + cx + '" cy="' + cy + '" r="3.2" /></g>';
     return '<svg class="best-time-polar" viewBox="0 0 220 220" role="img" aria-label="Hourly detections">'
       + '<g class="polar-grid">' + circles + spokes + '</g>'
       + '<g class="polar-wedges">' + wedges + '</g>'
+      + currentHand
       + '<g class="polar-labels">' + labels + '</g>'
       + '</svg>';
   }
