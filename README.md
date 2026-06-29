@@ -4,7 +4,23 @@ A BirdNET-Pi display that turns local detections into an illustrated bird collag
 
 This is a fork of the [Twarner491/AvianVisitors](https://github.com/Twarner491/AvianVisitors) project, which itself builds on the BirdNET-Pi ecosystem. The original README is saved as [`README.upstream.md`](README.upstream.md). This edition keeps the local Pi display and public mirror workflow, but adds Central / North America artwork, best-time clocks, recent detection calendars, local rarity labels, optional eBird nearby context, and a safer Collage layout.
 
+## Screenshots
+
+![Avian Visitors collage page with regional bird artwork](docs/thumb.png)
+
+*The main Collage page uses the regional artwork pack and now includes safer placement for differently sized bird images.*
+
 ![Atlas detail modal showing the best-time clock dial for Northern Cardinal](docs/avian-best-time-clock.png)
+
+*The Atlas detail view adds the BirdNET-style clock dial so each bird can show its best local time of day based on previous detections.*
+
+![BirdNET-Pi overview page](docs/overview.png)
+
+*The project still works alongside the standard BirdNET-Pi dashboard and detection history.*
+
+![BirdNET-Pi spectrogram page](docs/spectrogram.png)
+
+*BirdNET-Pi spectrogram and live audio views remain available on the local Pi installation.*
 
 ## What changed
 
