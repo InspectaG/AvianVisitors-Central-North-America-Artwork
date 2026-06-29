@@ -555,6 +555,27 @@
   .gtile.is-hover img {
     filter: drop-shadow(0 3px 10px rgba(26,22,18,0.26)) saturate(1.1);
   }
+  .collage-rarity-badge {
+    position: absolute;
+    top: 3%;
+    right: 2%;
+    z-index: 2;
+    padding: 3px 5px;
+    border-radius: 4px;
+    background: var(--paper);
+    color: var(--accent);
+    box-shadow: var(--edge);
+    font: 700 clamp(7px, 1.1vw, 10px)/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+  .collage-rarity-badge[data-rarity="epic"] {
+    color: #9b2f27;
+  }
+  .collage-rarity-badge[data-rarity="rare"] {
+    color: #9b5a16;
+  }
   /* Hover pill - surfaces the windowed count for the bird under the
      cursor. Confirms (Anna's-hummingbird-is-#1 paranoia) that the
      collage scaling reflects the selected window, not all-time. */
@@ -2275,6 +2296,50 @@
   .modal-best-time[data-empty="true"] .best-time-clock {
     display: none;
   }
+  .modal-detection-calendar {
+    margin: 12px 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .modal-detection-calendar[data-empty="true"] {
+    opacity: 0.82;
+  }
+  .detect-calendar-copy .k,
+  .detect-calendar-copy .v {
+    display: block;
+    font: 9.5px/1.35 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.10em;
+    text-transform: lowercase;
+  }
+  .detect-calendar-copy strong {
+    display: block;
+    margin: 4px 0 7px;
+    font: 700 17px/1.15 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .detect-calendar-bars {
+    display: grid;
+    grid-template-columns: repeat(30, minmax(0, 1fr));
+    gap: 2px;
+    align-items: end;
+    height: 42px;
+    padding-top: 4px;
+  }
+  .detect-calendar-bars i {
+    display: block;
+    min-width: 2px;
+    border-radius: 2px 2px 0 0;
+    background: rgba(63, 135, 89, 0.22);
+  }
+  .detect-calendar-bars i[data-level="0"] { height: 8%; background: rgba(126,132,145,0.16); }
+  .detect-calendar-bars i[data-level="1"] { height: 18%; }
+  .detect-calendar-bars i[data-level="2"] { height: 34%; background: rgba(63, 135, 89, 0.36); }
+  .detect-calendar-bars i[data-level="3"] { height: 52%; background: rgba(63, 135, 89, 0.52); }
+  .detect-calendar-bars i[data-level="4"] { height: 72%; background: rgba(63, 135, 89, 0.70); }
+  .detect-calendar-bars i[data-level="5"] { height: 100%; background: #3f8759; }
   .modal-ebird-nearby {
     margin: 12px 0 14px;
     padding: 10px 12px;
@@ -2335,7 +2400,10 @@
   }
   .modal-meta .k { letter-spacing: 0.12em; text-transform: uppercase; }
   .modal-meta .v { color: var(--ink); margin-left: 6px; }
-  .modal-meta .v.rare { color: var(--accent-2); }
+  .modal-meta .v.epic { color: #9b2f27; font-weight: 700; }
+  .modal-meta .v.rare { color: #9b5a16; font-weight: 700; }
+  .modal-meta .v.uncommon { color: var(--accent-2); }
+  .modal-meta .v.pedestrian { color: var(--ink); }
   .modal-recordings {
     margin-top: 24px; padding-top: 16px;
     box-shadow: inset 0 1px 0 rgba(26,22,18,0.07);

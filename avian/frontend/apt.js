@@ -771,7 +771,11 @@
       btn.style.top    = r.y + 'px';
       btn.style.width  = r.fullW + 'px';
       btn.style.height = r.fullH + 'px';
-      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">';
+      var rarity = rarityInfoForSci(s.sci, s.n);
+      var badge = (rarity.key === 'epic' || rarity.key === 'rare')
+        ? '<span class="collage-rarity-badge" data-rarity="' + rarity.key + '">' + rarity.label + '</span>'
+        : '';
+      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">' + badge;
       r.el = btn;
       collage.appendChild(btn);
     });
@@ -2453,19 +2457,76 @@
       return fmtSiteDate(ms) + ' · ' + fmtSiteTime(ms) + ' ' + SITE_TIME_LABEL;
     } catch (e) { return d + ' ' + (t || ''); }
   }
-  function rarityLabel(total, firstSeenIso) {
-    if (!total) return '-';
-    var days = 1;
-    if (firstSeenIso) {
-      var t = parseSiteTs(firstSeenIso);
-      if (!isNaN(t)) days = Math.max(1, Math.ceil((Date.now() - t) / 86400000));
-    }
-    var perDay = total / days;
-    if (perDay >= 5) return 'common';
-    if (perDay >= 1) return 'regular';
-    if (perDay >= 0.2) return 'occasional';
-    return 'rare';
+  function totalDetectionCount() {
+    return +((DATA.stats && DATA.stats.totals && DATA.stats.totals.detections) || 0);
   }
+  function rarityInfoForTotal(total) {
+    total = +total || 0;
+    if (!total) return { key: 'unknown', label: '-', share: 0 };
+    var all = Math.max(1, totalDetectionCount());
+    var share = total / all;
+    if (total <= 1 || share < 0.001) return { key: 'epic', label: 'Epic', share: share };
+    if (total <= 3 || share < 0.005) return { key: 'rare', label: 'Rare', share: share };
+    if (share < 0.02) return { key: 'uncommon', label: 'Uncommon', share: share };
+    return { key: 'pedestrian', label: 'Pedestrian', share: share };
+  }
+  function rarityInfoForSci(sci, fallbackTotal) {
+    var total = speciesTotals[sci];
+    if (total == null) total = +fallbackTotal || 0;
+    return rarityInfoForTotal(total);
+  }
+  function rarityExplainer(info, total) {
+    if (!info || info.key === 'unknown') return 'No detections yet.';
+    var pct = Math.max(0.01, info.share * 100).toFixed(info.share < 0.01 ? 2 : 1);
+    return fmtN(total) + ' all-time calls · ' + pct + '% of your detections';
+  }
+  function localIsoDate(d) {
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+  function backfillSpeciesDays(profile, dets) {
+    var days = Math.max(1, Math.min(60, +(profile && profile.days) || 30));
+    var byDate = {};
+    ((profile && profile.dates) || []).forEach(function (r) { byDate[r.date] = +r.n || 0; });
+    if (!Object.keys(byDate).length) {
+      (dets || []).forEach(function (d) {
+        if (!d.d) return;
+        byDate[d.d] = (byDate[d.d] || 0) + 1;
+      });
+    }
+    var out = [];
+    var today = new Date();
+    for (var i = days - 1; i >= 0; i -= 1) {
+      var d = new Date(today);
+      d.setDate(today.getDate() - i);
+      var key = localIsoDate(d);
+      out.push({ date: key, n: byDate[key] || 0 });
+    }
+    return out;
+  }
+  function renderDetectionCalendar(profile, dets) {
+    var box = document.getElementById('modalDetectionCalendar');
+    if (!box) return;
+    var rows = backfillSpeciesDays(profile, dets || []);
+    var maxN = rows.reduce(function (m, r) { return Math.max(m, r.n); }, 0);
+    var active = rows.filter(function (r) { return r.n > 0; }).length;
+    if (!maxN) {
+      box.setAttribute('data-empty', 'true');
+      box.innerHTML = '<div class="detect-calendar-copy"><span class="k">detection calendar</span><strong>No recent calls</strong><span class="v">No detections in the last ' + rows.length + ' days.</span></div>';
+      return;
+    }
+    box.removeAttribute('data-empty');
+    var bars = rows.map(function (r) {
+      var lvl = r.n > 0 ? Math.max(1, Math.ceil((r.n / maxN) * 5)) : 0;
+      return '<i data-level="' + lvl + '" title="' + r.date + ': ' + fmtN(r.n) + ' calls"></i>';
+    }).join('');
+    box.innerHTML = ''
+      + '<div class="detect-calendar-copy"><span class="k">detection calendar</span><strong>' + active + ' of ' + rows.length + ' days</strong><span class="v">last 30 days · darkest bars are busiest</span></div>'
+      + '<div class="detect-calendar-bars" aria-hidden="true">' + bars + '</div>';
+  }
+
   // rAF-driven cursor smoothing. timeupdate fires ~4Hz which feels
   // janky; we sample audio.currentTime every animation frame and
   // interpolate to a 60Hz update so the playback knob glides.
@@ -2609,9 +2670,11 @@
     }
     document.getElementById('modalFirstSeen').textContent = '-';
     renderBestTime(null, []);
+    renderDetectionCalendar(null, []);
     renderEbirdNearby(null);
     document.getElementById('modalRarity').textContent = '-';
-    document.getElementById('modalRarity').classList.remove('rare');
+    document.getElementById('modalRarity').classList.remove('epic', 'rare', 'uncommon', 'pedestrian');
+    document.getElementById('modalRarity').removeAttribute('title');
     document.getElementById('modalDesc').textContent = 'Loading description...';
     document.getElementById('modalDesc').classList.add('placeholder');
     document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Loading recordings...</li>';
@@ -2646,12 +2709,16 @@
       var winRow = ((DATA.recent && DATA.recent.species) || []).filter(function (x) { return x.sci === sci; })[0];
       document.getElementById('modalWindow').textContent = fmtN(winRow ? +winRow.n : 0);
       document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtDateLine(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
-      var rar = rarityLabel(speciesTotal(s), s.first_seen);
+      var total = speciesTotal(s);
+      var rar = rarityInfoForTotal(total);
       var rarEl = document.getElementById('modalRarity');
-      rarEl.textContent = rar;
-      if (rar === 'rare') rarEl.classList.add('rare');
+      rarEl.textContent = rar.label;
+      rarEl.classList.remove('epic', 'rare', 'uncommon', 'pedestrian');
+      rarEl.classList.add(rar.key);
+      rarEl.title = rarityExplainer(rar, total);
       var dets = j.detections || [];
       renderBestTime(j.time_profile, dets);
+      renderDetectionCalendar(j.daily_profile, dets);
       renderEbirdNearby(ebirdNearbyFor(sci));
       if (j.audio_private) {
         document.getElementById('modalRecCount').textContent = 'private';

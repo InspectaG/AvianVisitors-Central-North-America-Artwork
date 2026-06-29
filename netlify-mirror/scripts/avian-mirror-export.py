@@ -210,6 +210,16 @@ def snapshot(db_path, audio_root=AUDIO_ROOT):
         )
         profile_total = sum(int(r.get("n") or 0) for r in time_rows)
         best = max(time_rows, key=lambda r: int(r.get("n") or 0), default=None)
+        daily_rows = rows(
+            con,
+            """
+            SELECT Date AS date, COUNT(*) AS n
+            FROM detections
+            WHERE Sci_Name = ? AND Date >= DATE('now','localtime','-29 day')
+            GROUP BY Date ORDER BY Date
+            """,
+            (sci,),
+        )
         audio = audio_by_sci.get(sci)
         if audio and summary:
             summary["public_audio"] = audio
@@ -224,6 +234,7 @@ def snapshot(db_path, audio_root=AUDIO_ROOT):
                 "best_hour": int(best["hour"]) if best else None,
                 "hours": time_rows,
             },
+            "daily_profile": {"days": 30, "dates": daily_rows},
         }
 
     data = {

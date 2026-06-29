@@ -202,6 +202,12 @@ switch ($action) {
         . "FROM detections WHERE Sci_Name = :sn GROUP BY hour ORDER BY hour",
           [':sn' => $sci]
         );
+        $byDay = rows($db,
+          "SELECT Date AS date, COUNT(*) AS n "
+        . "FROM detections WHERE Sci_Name = :sn AND Date >= DATE('now','localtime','-29 day') "
+        . "GROUP BY Date ORDER BY Date",
+          [':sn' => $sci]
+        );
         $bestHour = null;
         $bestCount = 0;
         $profileTotal = 0;
@@ -221,6 +227,10 @@ switch ($action) {
                 'total' => $profileTotal,
                 'best_hour' => $bestHour,
                 'hours' => $byHour,
+            ],
+            'daily_profile' => [
+                'days' => 30,
+                'dates' => $byDay,
             ],
         ]);
         break;
