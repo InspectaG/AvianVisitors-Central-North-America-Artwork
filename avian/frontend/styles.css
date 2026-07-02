@@ -2327,10 +2327,112 @@
     cursor: pointer;
   }
   .admin-action button.run[disabled] { opacity: .5; cursor: wait; }
+  .admin-action.purge {
+    box-shadow: inset 0 0 0 1px rgba(143,62,48,0.16), var(--edge);
+  }
+  .purge-controls {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .purge-controls label {
+    font: 9px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.13em;
+    color: var(--ink-soft);
+    text-transform: lowercase;
+  }
+  .purge-controls select,
+  .purge-confirm input {
+    min-width: 0;
+    border: 0;
+    border-radius: 6px;
+    background: var(--paper-2);
+    color: var(--ink);
+    box-shadow: var(--recess);
+    font: 11px ui-monospace, Menlo, monospace;
+  }
+  .purge-controls select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding: 8px 30px 8px 10px;
+    background:
+      linear-gradient(45deg, transparent 50%, currentColor 50%) calc(100% - 15px) 50% / 5px 5px no-repeat,
+      linear-gradient(135deg, currentColor 50%, transparent 50%) calc(100% - 10px) 50% / 5px 5px no-repeat,
+      var(--paper-2);
+  }
+  .purge-preview {
+    min-height: 70px;
+    margin: 10px 0;
+  }
+  .purge-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .purge-summary div {
+    padding: 9px 8px 8px;
+    border-radius: 7px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .purge-summary strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 700 19px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .purge-summary span,
+  .purge-window-note,
+  .purge-loading {
+    font: 9px/1.25 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    text-transform: lowercase;
+  }
+  .purge-window-note {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 8px;
+  }
+  .purge-loading {
+    padding: 12px 0;
+  }
+  .purge-confirm {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .purge-confirm input {
+    height: 31px;
+    padding: 0 10px;
+  }
+  .purge-confirm button.danger {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: var(--accent);
+    color: var(--paper);
+    cursor: pointer;
+    font: 9.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.1em;
+    text-transform: lowercase;
+  }
+  .purge-confirm button.danger:disabled {
+    opacity: 0.38;
+    cursor: default;
+  }
   .admin-action .out {
     margin-top: 10px; font: 10.5px ui-monospace, Menlo, monospace;
     color: var(--ink-soft); white-space: pre-wrap;
   }
+  .admin-action .out.ok { color: #2d5d3a; }
+  .admin-action .out.err { color: var(--accent); }
   .admin-action.deploy pre {
     background: #1c1a14; color: #d7cba8;
     font: 11px ui-monospace, Menlo, monospace;

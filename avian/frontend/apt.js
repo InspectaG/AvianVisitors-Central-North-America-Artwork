@@ -604,9 +604,9 @@
     var cx = W / 2, cy = H / 2;
     // Largest first so the cluster grows around the anchor.
     tiles.sort(function (a, b) {
-      if (a.nightProtected !== b.nightProtected) return a.nightProtected ? -1 : 1;
       var areaDiff = (b.fullW * b.fullH) - (a.fullW * a.fullH);
       if (Math.abs(areaDiff) > 1) return areaDiff;
+      if (a.nightProtected !== b.nightProtected) return a.nightProtected ? -1 : 1;
       if (ellipseBias <= 1.25 && tiles.length <= 8) {
         return Math.abs(a.ar - 1.1) - Math.abs(b.ar - 1.1);
       }
@@ -788,9 +788,16 @@
     }
 
     // Re-centre the cluster in the viewport so a small cluster doesn't
-    // drift to one side from the spiral's center-of-mass bias.
+    // drift to one side from the spiral's center-of-mass bias. Anchor the
+    // horizontal shift on the largest bird, not only the cluster bounds,
+    // so the most-heard species reads as the centerpiece of the collage.
     var targetY = T.mobileCompact ? H * 0.47 : H / 2;
-    var dx = W / 2 - (b.L + b.R) / 2;
+    var anchor = null;
+    placed.forEach(function (t) {
+      if (t.x < -1000) return;
+      if (!anchor || t.fullW * t.fullH > anchor.fullW * anchor.fullH) anchor = t;
+    });
+    var dx = anchor ? (W / 2 - (anchor.x + anchor.fullW / 2)) : (W / 2 - (b.L + b.R) / 2);
     var dy = targetY - (b.T + b.B) / 2;
     var marginX = fitMarginX;
     var marginY = fitMarginY;
@@ -798,6 +805,7 @@
     dy = Math.max(marginY - b.T, Math.min(H - marginY - b.B, dy));
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
       placed.forEach(function (t) { if (t.x > -1000) { t.x += dx; t.y += dy; } });
+      b = clusterBounds(placed);
     }
 
     placed.forEach(function (r) {
@@ -3417,6 +3425,127 @@
     adminPollT = setInterval(tick, 4000);
   }
 
+  function purgeWindowLabel(hours) {
+    hours = +hours || 24;
+    if (hours >= 1000000) return 'all time';
+    if (hours < 24) return hours + ' hour' + (hours === 1 ? '' : 's');
+    var days = Math.round(hours / 24);
+    return days + ' day' + (days === 1 ? '' : 's');
+  }
+
+  function purgeFmtDate(s) {
+    if (!s) return '-';
+    return String(s).replace(' ', ' · ');
+  }
+
+  function renderPurgeSummary(summary, hours) {
+    summary = summary || {};
+    return ''
+      + '<div class="purge-summary" data-empty="' + ((+summary.detections || 0) === 0 ? 'true' : 'false') + '">'
+      + '  <div><strong>' + adminEsc(summary.detections || 0) + '</strong><span>detections</span></div>'
+      + '  <div><strong>' + adminEsc(summary.species || 0) + '</strong><span>species</span></div>'
+      + '  <div><strong>' + adminEsc(purgeWindowLabel(hours)) + '</strong><span>range</span></div>'
+      + '</div>'
+      + '<div class="purge-window-note">'
+      + '  <span>oldest ' + adminEsc(purgeFmtDate(summary.oldest)) + '</span>'
+      + '  <span>newest ' + adminEsc(purgeFmtDate(summary.newest)) + '</span>'
+      + '</div>';
+  }
+
+  function wirePurgeTool() {
+    var card = document.getElementById('purgeTool');
+    if (!card) return;
+    var range = card.querySelector('#purgeRange');
+    var confirmInput = card.querySelector('#purgeConfirm');
+    var btn = card.querySelector('#purgeDelete');
+    var preview = card.querySelector('#purgePreview');
+    var out = card.querySelector('#purgeOut');
+    var currentSummary = null;
+    var loading = false;
+
+    function setOut(msg, cls) {
+      if (!out) return;
+      out.textContent = msg || '';
+      out.className = 'out purge-out' + (cls ? ' ' + cls : '');
+    }
+
+    function updateButton() {
+      var count = currentSummary ? (+currentSummary.detections || 0) : 0;
+      btn.disabled = loading || count === 0 || !confirmInput || confirmInput.value.trim() !== 'DELETE';
+    }
+
+    function loadPreview() {
+      var hours = +(range.value || 24);
+      loading = true;
+      currentSummary = null;
+      if (preview) preview.innerHTML = '<div class="purge-loading">checking selected range...</div>';
+      setOut('');
+      updateButton();
+      fetch(apiUrl('bulk-delete-recordings.php?action=preview&hours=' + encodeURIComponent(hours)), {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'preview failed');
+          currentSummary = res.j.summary || {};
+          if (preview) preview.innerHTML = renderPurgeSummary(currentSummary, hours);
+          if ((+currentSummary.detections || 0) === 0) setOut('nothing to delete for this range');
+        })
+        .catch(function (e) {
+          if (preview) preview.innerHTML = '<div class="purge-loading">preview unavailable</div>';
+          setOut(e.message || 'preview failed', 'err');
+        })
+        .finally(function () {
+          loading = false;
+          updateButton();
+        });
+    }
+
+    range.addEventListener('change', function () {
+      if (confirmInput) confirmInput.value = '';
+      loadPreview();
+    });
+    if (confirmInput) confirmInput.addEventListener('input', updateButton);
+    btn.addEventListener('click', function () {
+      var hours = +(range.value || 24);
+      var count = currentSummary ? (+currentSummary.detections || 0) : 0;
+      if (!count || confirmInput.value.trim() !== 'DELETE') return;
+      if (!confirm('Permanently delete ' + count + ' detections from ' + purgeWindowLabel(hours) + '?')) return;
+      loading = true;
+      btn.disabled = true;
+      btn.textContent = 'deleting...';
+      setOut('deleting selected recordings...');
+      fetch(apiUrl('bulk-delete-recordings.php'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hours: hours, confirm: 'DELETE' }),
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'delete failed');
+          var d = res.j.deleted || {};
+          setOut('deleted ' + (d.detections || 0) + ' detections and ' + (d.files || 0) + ' recordings', 'ok');
+          DATA.stats = DATA.recent = DATA.lifelist = DATA.timeseries = DATA.firstseen = DATA.seasonfirst = null;
+          DATA.ebirdNearby = DATA.overnight = DATA.nightCollage = null;
+          SPECIES_CACHE = {};
+          if (confirmInput) confirmInput.value = '';
+          refreshRecent();
+          loadPreview();
+        })
+        .catch(function (e) {
+          setOut(e.message || 'delete failed', 'err');
+        })
+        .finally(function () {
+          loading = false;
+          btn.textContent = 'delete selected';
+          updateButton();
+        });
+    });
+    loadPreview();
+  }
+
   function renderAdminTools() {
     var actions = [
       ['restart birdnet_recording', 'picks up live audio from the mic. restart this first if detections stall.', 'birdnet_recording'],
@@ -3435,6 +3564,31 @@
         + '<div class="out" data-out="' + adminEsc(a[2]) + '"></div>'
         + '</div>';
     });
+    html += '</div>';
+    html += '<h2 class="admin-section-head">recordings</h2>';
+    html += '<div class="admin-actions-grid">';
+    html += '<div class="admin-action purge" id="purgeTool">'
+      + '<h4>delete recordings</h4>'
+      + '<p>Preview and permanently erase detections from a recent window. Type DELETE to unlock the button.</p>'
+      + '<div class="purge-controls">'
+      + '  <label for="purgeRange">range</label>'
+      + '  <select id="purgeRange">'
+      + '    <option value="1">1 hour</option>'
+      + '    <option value="12">12 hours</option>'
+      + '    <option value="24" selected>24 hours</option>'
+      + '    <option value="168">7 days</option>'
+      + '    <option value="720">30 days</option>'
+      + '    <option value="2160">90 days</option>'
+      + '    <option value="1000000">all time</option>'
+      + '  </select>'
+      + '</div>'
+      + '<div id="purgePreview" class="purge-preview"><div class="purge-loading">checking selected range...</div></div>'
+      + '<div class="purge-confirm">'
+      + '  <input id="purgeConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="type DELETE">'
+      + '  <button id="purgeDelete" class="danger" type="button" disabled>delete selected</button>'
+      + '</div>'
+      + '<div class="out purge-out" id="purgeOut"></div>'
+      + '</div>';
     html += '</div>';
     html += '<h2 class="admin-section-head">heal / update</h2>';
     html += '<div class="admin-actions-grid">';
@@ -3460,6 +3614,7 @@
       ]);
     html += '</div>';
     adminBody.innerHTML = html;
+    wirePurgeTool();
     // Wire restart buttons + copy buttons.
     adminBody.querySelectorAll('.admin-action button.run').forEach(function (b) {
       b.addEventListener('click', function () {
