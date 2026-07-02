@@ -43,6 +43,8 @@ $ALLOWED = [
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
     'EBIRD_API_KEY'      => ['type' => 'secret', 'maxlen' => 120],
+    'AV_NIGHT_START'     => ['type' => 'int',   'min' => 0,    'max' => 23],
+    'AV_NIGHT_END'       => ['type' => 'int',   'min' => 0,    'max' => 23],
 ];
 
 function read_conf(string $path): array {
@@ -118,6 +120,10 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $conf = read_conf($CONF_PATH);
+    $conf += [
+        'AV_NIGHT_START' => '21',
+        'AV_NIGHT_END' => '5',
+    ];
     $out = [];
     foreach ($ALLOWED as $k => $spec) {
         if (!array_key_exists($k, $conf)) continue;

@@ -6,9 +6,11 @@
 //   stats       - totals (detections, unique species, today, last hour)
 //   lifelist    - every species with first_seen, last_seen, total_count
 //   recent      - &hours=N (default 24): species heard in the window
+//   night       - &hours=N: species heard during configured night hours
 //   species     - &sci=<sci_name>: per-species detail page
 //   timeseries  - &days=N: daily detection counts per species
 //   firstseen   - every species' earliest detection
+//   seasonfirst - every species' first detection since Jan 1
 //   ebird_nearby - eBird recent nearby reports, matched by scientific name
 //
 // Default LAN deploy ships without auth. If you've exposed the Pi via
@@ -180,6 +182,46 @@ switch ($action) {
             $r['top_at']   = isset($best['d']) ? ($best['d'].' '.$best['t']) : null;
         }
         echo json_encode(['hours' => $hours, 'species' => $rs, 'as_of' => date('c')]);
+        break;
+    }
+
+    case 'night': {
+        $hours = max(1, min(1000000, (int)($_GET['hours'] ?? 168)));
+        $limit = max(1, min(20, (int)($_GET['limit'] ?? 6)));
+        $conf = read_birdnet_conf(dirname(__DIR__, 2) . '/birdnet.conf');
+        $startHour = (int)($_GET['night_start'] ?? ($conf['AV_NIGHT_START'] ?? 21));
+        $endHour = (int)($_GET['night_end'] ?? ($conf['AV_NIGHT_END'] ?? 5));
+        $startHour = max(0, min(23, $startHour));
+        $endHour = max(0, min(23, $endHour));
+        $startTime = sprintf('%02d:00:00', $startHour);
+        $endTime = sprintf('%02d:00:00', $endHour);
+        if ($startHour === $endHour) {
+            $nightWhere = '';
+            $bind = [':hrs' => $hours, ':lim' => $limit];
+        } elseif ($startHour < $endHour) {
+            $nightWhere = "AND (Time >= :night_start AND Time < :night_end) ";
+            $bind = [':hrs' => $hours, ':lim' => $limit, ':night_start' => $startTime, ':night_end' => $endTime];
+        } else {
+            $nightWhere = "AND (Time >= :night_start OR Time < :night_end) ";
+            $bind = [':hrs' => $hours, ':lim' => $limit, ':night_start' => $startTime, ':night_end' => $endTime];
+        }
+        $rs = rows($db,
+          "SELECT Sci_Name AS sci, Com_Name AS com, COUNT(*) AS n, MAX(Confidence) AS best_conf, "
+        . "       MIN(Date||' '||Time) AS first_seen, MAX(Date||' '||Time) AS last_seen "
+        . "FROM detections "
+        . "WHERE (julianday('now','localtime') - julianday(Date||' '||Time)) * 24 <= :hrs "
+        . $nightWhere
+        . "GROUP BY Sci_Name "
+        . "ORDER BY n DESC, last_seen DESC "
+        . "LIMIT :lim",
+          $bind
+        );
+        echo json_encode([
+            'hours' => $hours,
+            'window' => ['start_hour' => $startHour, 'end_hour' => $endHour],
+            'species' => $rs,
+            'as_of' => date('c'),
+        ]);
         break;
     }
 
@@ -364,6 +406,29 @@ switch ($action) {
           [':lim' => $limit]
         );
         echo json_encode(['species' => $rs, 'as_of' => date('c')]);
+        break;
+    }
+
+    case 'seasonfirst': {
+        // First detection per species since Jan 1 of the current local
+        // calendar year. This is a backyard "season list" marker rather
+        // than an all-time life-list marker.
+        $limit = max(1, min(100, (int)($_GET['limit'] ?? 20)));
+        $seasonStart = date('Y') . '-01-01';
+        $rs = rows($db,
+          "SELECT Sci_Name AS sci, Com_Name AS com, MIN(Date||' '||Time) AS first_seen, "
+        . "       COUNT(*) AS season_total "
+        . "FROM detections "
+        . "WHERE Date >= :season_start "
+        . "GROUP BY Sci_Name "
+        . "ORDER BY first_seen DESC LIMIT :lim",
+          [':season_start' => $seasonStart, ':lim' => $limit]
+        );
+        echo json_encode([
+            'season_start' => $seasonStart,
+            'species' => $rs,
+            'as_of' => date('c'),
+        ]);
         break;
     }
 
