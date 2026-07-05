@@ -189,6 +189,137 @@ function mic_verdict(array $m): array {
     return ['tone' => 'good', 'label' => 'usable', 'explain' => 'Levels look usable for BirdNET. Compare detections after tuning confidence and sensitivity.'];
 }
 
+function alsa_cards(): array {
+    $raw = @file_get_contents('/proc/asound/cards') ?: '';
+    preg_match_all('/^\s*(\d+)\s+\[([^\]]+)\]/m', $raw, $m, PREG_SET_ORDER);
+    return array_map(function ($r) {
+        return ['id' => (int)$r[1], 'name' => trim($r[2])];
+    }, $m);
+}
+
+function mixer_get(int $card, string $control): array {
+    $raw = shellout('amixer -c ' . (int)$card . ' get ' . escapeshellarg($control));
+    if (stripos($raw, 'cvolume') === false && stripos($raw, 'Capture channels') === false) {
+        return [
+            'ok' => false,
+            'card' => $card,
+            'control' => $control,
+            'error' => 'not a capture control',
+            'raw' => $raw,
+        ];
+    }
+    if (preg_match('/Capture\s+\d+\s+\[(\d+)%\]\s+(?:\[[^\]]+\]\s+)?\[(on|off)\]/i', $raw, $m) ||
+        preg_match('/Mono:.*?\[(\d+)%\].*?\[(on|off)\]/i', $raw, $m)) {
+        return [
+            'ok' => true,
+            'card' => $card,
+            'control' => $control,
+            'percent' => (int)$m[1],
+            'enabled' => strtolower($m[2]) === 'on',
+            'raw' => $raw,
+        ];
+    }
+    return [
+        'ok' => false,
+        'card' => $card,
+        'control' => $control,
+        'error' => trim($raw) ?: 'Capture mixer control not found',
+    ];
+}
+
+function discover_mic_gain(): array {
+    $cards = alsa_cards();
+    $preferred = ['Capture', 'Mic', 'Digital', 'Input'];
+    foreach ($cards as $card) {
+        $controlsRaw = shellout('amixer -c ' . (int)$card['id'] . ' scontrols');
+        preg_match_all("/Simple mixer control '([^']+)'/i", $controlsRaw, $m);
+        $controls = $m[1] ?? [];
+        $ordered = array_values(array_unique(array_merge(
+            array_values(array_filter($preferred, fn($c) => in_array($c, $controls, true))),
+            $controls
+        )));
+        foreach ($ordered as $control) {
+            $gain = mixer_get((int)$card['id'], $control);
+            if (!empty($gain['ok'])) {
+                $gain['card_name'] = $card['name'];
+                $gain['controls'] = $controls;
+                return $gain;
+            }
+        }
+    }
+    return ['ok' => false, 'error' => 'No capture gain mixer control found', 'cards' => $cards];
+}
+
+function read_hardware_agc(?int $card = null): array {
+    $cards = $card === null ? alsa_cards() : [['id' => $card, 'name' => '']];
+    foreach ($cards as $c) {
+        $raw = shellout('amixer -c ' . (int)$c['id'] . ' get ' . escapeshellarg('Auto Gain Control'));
+        if (preg_match('/Playback\s+\[(on|off)\]/i', $raw, $m)) {
+            return ['ok' => true, 'card' => (int)$c['id'], 'enabled' => strtolower($m[1]) === 'on', 'raw' => $raw];
+        }
+    }
+    return ['ok' => false, 'error' => 'Auto Gain Control mixer switch not found'];
+}
+
+function read_mic_gain(): array {
+    $gain = discover_mic_gain();
+    if (!empty($gain['ok'])) $gain['hardware_agc'] = read_hardware_agc((int)$gain['card']);
+    return $gain;
+}
+
+function set_mic_gain(int $percent): array {
+    $percent = max(0, min(100, $percent));
+    $current = read_mic_gain();
+    if (empty($current['ok'])) return $current + ['requested_percent' => $percent, 'set_ok' => false];
+    $rc = 0; $out = [];
+    exec(
+        'amixer -q -c ' . (int)$current['card'] . ' sset ' . escapeshellarg($current['control']) . ' ' . $percent . '% cap 2>&1',
+        $out,
+        $rc
+    );
+    $gain = read_mic_gain();
+    $gain['requested_percent'] = $percent;
+    $gain['set_ok'] = $rc === 0;
+    if ($rc !== 0) $gain['error'] = implode("\n", $out) ?: 'amixer failed';
+    return $gain;
+}
+
+function auto_mic_gain(string $dir): array {
+    $health = read_mic_health($dir);
+    $gain = read_mic_gain();
+    if (empty($health['ok'])) {
+        return ['ok' => false, 'error' => $health['error'] ?? 'mic health unavailable', 'health' => $health, 'gain' => $gain];
+    }
+    if (empty($gain['ok'])) {
+        return ['ok' => false, 'error' => $gain['error'] ?? 'mic gain unavailable', 'health' => $health, 'gain' => $gain];
+    }
+    $current = (int)$gain['percent'];
+    $target = $current;
+    $reason = 'already in target range';
+    $peak = $health['peak_dbfs'];
+    $clip = (float)$health['clipping_pct'];
+    if ($clip > 0.1 || ($peak !== null && $peak > -3.0)) {
+        $target = max(0, $current - 10);
+        $reason = 'reduced gain to avoid clipping';
+    } elseif ($peak !== null && $peak < -24.0) {
+        $target = min(100, $current + 15);
+        $reason = $target === $current ? 'gain is already at maximum' : 'increased gain for quiet input';
+    } elseif ($peak !== null && $peak < -16.0) {
+        $target = min(100, $current + 5);
+        $reason = $target === $current ? 'gain is already at maximum' : 'nudged gain upward';
+    }
+    $set = $target !== $current ? set_mic_gain($target) : $gain;
+    return [
+        'ok' => !empty($set['ok']) || !empty($gain['ok']),
+        'changed' => $target !== $current,
+        'reason' => $reason,
+        'from_percent' => $current,
+        'to_percent' => $target,
+        'health' => $health,
+        'gain' => $set,
+    ];
+}
+
 function wav_mic_health(string $path): array {
     $raw = @file_get_contents($path);
     if ($raw === false || strlen($raw) < 44) return ['ok' => false, 'error' => 'wav read failed'];
@@ -280,6 +411,7 @@ function read_mic_health(string $dir): array {
     $m = wav_mic_health($file);
     $m['as_of'] = date('c');
     $m['source'] = 'latest StreamData segment';
+    $m['gain'] = read_mic_gain();
     if (!empty($m['age_s']) && $m['age_s'] > 300) {
         $m['stale'] = true;
         $m['message'] = 'Latest recording segment is older than five minutes; restart birdnet_recording if this stays stale.';
@@ -390,6 +522,32 @@ switch ($action) {
 
     case 'mic_health': {
         echo json_encode(read_mic_health($STREAM_DIR));
+        break;
+    }
+
+    case 'mic_gain': {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $body = json_decode((string)file_get_contents('php://input'), true);
+            $percent = is_array($body) ? (int)($body['percent'] ?? -1) : -1;
+            if ($percent < 0 || $percent > 100) {
+                http_response_code(400);
+                echo json_encode(['ok' => false, 'error' => 'percent must be 0-100']);
+                break;
+            }
+            echo json_encode(set_mic_gain($percent));
+        } else {
+            echo json_encode(read_mic_gain());
+        }
+        break;
+    }
+
+    case 'mic_auto_gain': {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['ok' => false, 'error' => 'POST required']);
+            break;
+        }
+        echo json_encode(auto_mic_gain($STREAM_DIR));
         break;
     }
 

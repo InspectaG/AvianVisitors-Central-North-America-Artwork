@@ -3745,6 +3745,20 @@
         + (j.message ? '<div class="birdfy-note">' + adminEsc(j.message) + '</div>' : '');
     }
     var verdict = j.verdict || { tone: 'neutral', label: 'unknown', explain: '' };
+    var gain = j.gain || {};
+    var gainPct = gain.ok ? (+gain.percent || 0) : 0;
+    var agc = gain.hardware_agc && gain.hardware_agc.ok ? ('hardware agc ' + (gain.hardware_agc.enabled ? 'on' : 'off')) : 'hardware agc unavailable';
+    var gainHtml = gain.ok
+      ? '<div class="mic-gain-control">'
+        + '  <div class="head"><span class="label">capture gain</span><span class="value" id="micGainValue">' + adminEsc(gainPct + '%') + '</span></div>'
+        + '  <input id="micGainRange" type="range" min="0" max="100" step="1" value="' + adminEsc(gainPct) + '">'
+        + '  <div class="mic-gain-actions">'
+        + '    <button id="micGainApply" type="button">apply gain</button>'
+        + '    <button id="micGainAuto" type="button">auto</button>'
+        + '  </div>'
+        + '  <div class="birdfy-note" id="micGainNote">' + adminEsc(agc + ' · ' + (gainPct >= 100 ? 'capture gain is already at maximum' : 'adjust, then apply')) + '</div>'
+        + '</div>'
+      : '<div class="out err">' + adminEsc(gain.error || 'capture gain unavailable') + '</div>';
     return ''
       + '<div class="eval-verdict ' + adminEsc(verdict.tone || 'neutral') + '">'
       + '  <strong>' + adminEsc(verdict.label || 'unknown') + '</strong>'
@@ -3763,6 +3777,7 @@
       + '  <span>' + adminEsc(j.file || '-') + '</span>'
       + '  <span>' + adminEsc(j.age_s == null ? '-' : Math.round(+j.age_s) + 's old') + '</span>'
       + '</div>'
+      + gainHtml
       + (j.message ? '<div class="birdfy-note">' + adminEsc(j.message) + '</div>' : '');
   }
 
@@ -3771,12 +3786,65 @@
     if (!card) return;
     var btn = card.querySelector('#micHealthRefresh');
     var out = card.querySelector('#micHealthOut');
+    function wireGainControls() {
+      var range = card.querySelector('#micGainRange');
+      var value = card.querySelector('#micGainValue');
+      var apply = card.querySelector('#micGainApply');
+      var auto = card.querySelector('#micGainAuto');
+      var note = card.querySelector('#micGainNote');
+      if (range && value) {
+        range.addEventListener('input', function () {
+          value.textContent = range.value + '%';
+          if (note) note.textContent = 'change pending';
+        });
+      }
+      if (apply && range) {
+        apply.addEventListener('click', function () {
+          apply.disabled = true;
+          if (note) note.textContent = 'applying gain...';
+          fetch(apiUrl('birdnet-status.php?action=mic_gain'), {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ percent: +range.value }),
+          })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+              if (!res.ok || !res.j.set_ok) throw new Error(res.j.error || 'gain update failed');
+              if (note) note.textContent = 'gain set to ' + (res.j.percent == null ? range.value : res.j.percent) + '%';
+              setTimeout(loadMicHealth, 900);
+            })
+            .catch(function (e) { if (note) note.textContent = e.message || 'gain update failed'; })
+            .finally(function () { apply.disabled = false; });
+        });
+      }
+      if (auto) {
+        auto.addEventListener('click', function () {
+          auto.disabled = true;
+          if (note) note.textContent = 'checking auto gain...';
+          fetch(apiUrl('birdnet-status.php?action=mic_auto_gain'), {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+          })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+              if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'auto gain failed');
+              if (note) note.textContent = res.j.reason || 'auto gain checked';
+              setTimeout(loadMicHealth, 900);
+            })
+            .catch(function (e) { if (note) note.textContent = e.message || 'auto gain failed'; })
+            .finally(function () { auto.disabled = false; });
+        });
+      }
+    }
     function loadMicHealth() {
       if (out) out.innerHTML = '<div class="purge-loading">checking latest recording segment...</div>';
       if (btn) btn.disabled = true;
       fetch(apiUrl('birdnet-status.php?action=mic_health'), { credentials: 'same-origin', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
-        .then(function (j) { if (out) out.innerHTML = renderMicHealth(j); })
+        .then(function (j) { if (out) out.innerHTML = renderMicHealth(j); wireGainControls(); })
         .catch(function (e) { if (out) out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'mic health failed') + '</div>'; })
         .finally(function () { if (btn) btn.disabled = false; });
     }

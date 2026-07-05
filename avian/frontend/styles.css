@@ -2457,6 +2457,54 @@
     color: var(--ink-soft);
     text-transform: lowercase;
   }
+  .mic-gain-control {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 7px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .mic-gain-control .head,
+  .mic-gain-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .mic-gain-control .label,
+  .mic-gain-control .value {
+    font: 9.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    text-transform: lowercase;
+  }
+  .mic-gain-control .value {
+    color: var(--ink);
+    font-weight: 800;
+  }
+  .mic-gain-control input[type="range"] {
+    width: 100%;
+    margin: 10px 0;
+    accent-color: var(--ink);
+  }
+  .mic-gain-actions {
+    justify-content: flex-start;
+  }
+  .mic-gain-actions button {
+    border: 0;
+    border-radius: 999px;
+    padding: 7px 11px;
+    background: var(--ink);
+    color: var(--paper);
+    cursor: pointer;
+    font: 9.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+  }
+  .mic-gain-actions button:disabled {
+    opacity: 0.45;
+    cursor: wait;
+  }
   .birdfy-status {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
