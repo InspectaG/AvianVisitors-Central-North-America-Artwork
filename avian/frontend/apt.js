@@ -3734,6 +3734,56 @@
     loadStatus();
   }
 
+  function fmtDb(v) {
+    return v == null || !isFinite(+v) ? '-' : (+v).toFixed(1) + ' dBFS';
+  }
+
+  function renderMicHealth(j) {
+    if (!j) return '<div class="purge-loading">checking mic health...</div>';
+    if (!j.ok) {
+      return '<div class="out err">' + adminEsc(j.error || 'mic health unavailable') + '</div>'
+        + (j.message ? '<div class="birdfy-note">' + adminEsc(j.message) + '</div>' : '');
+    }
+    var verdict = j.verdict || { tone: 'neutral', label: 'unknown', explain: '' };
+    return ''
+      + '<div class="eval-verdict ' + adminEsc(verdict.tone || 'neutral') + '">'
+      + '  <strong>' + adminEsc(verdict.label || 'unknown') + '</strong>'
+      + '  <span>' + adminEsc(verdict.explain || '') + '</span>'
+      + '</div>'
+      + '<div class="mic-health-grid">'
+      + '  <div><strong>' + adminEsc(fmtDb(j.peak_dbfs)) + '</strong><span>peak</span></div>'
+      + '  <div><strong>' + adminEsc(fmtDb(j.rms_dbfs)) + '</strong><span>average</span></div>'
+      + '  <div><strong>' + adminEsc(fmtDb(j.noise_floor_dbfs)) + '</strong><span>noise floor</span></div>'
+      + '  <div><strong>' + adminEsc((+j.clipping_pct || 0).toFixed(3) + '%') + '</strong><span>clipping</span></div>'
+      + '</div>'
+      + '<div class="eval-settings">'
+      + '  <span>' + adminEsc(j.duration_s || '-') + 's sample</span>'
+      + '  <span>' + adminEsc(j.sample_rate || '-') + ' hz</span>'
+      + '  <span>' + adminEsc(j.channels || '-') + ' channels</span>'
+      + '  <span>' + adminEsc(j.file || '-') + '</span>'
+      + '  <span>' + adminEsc(j.age_s == null ? '-' : Math.round(+j.age_s) + 's old') + '</span>'
+      + '</div>'
+      + (j.message ? '<div class="birdfy-note">' + adminEsc(j.message) + '</div>' : '');
+  }
+
+  function wireMicHealthTool() {
+    var card = document.getElementById('micHealthTool');
+    if (!card) return;
+    var btn = card.querySelector('#micHealthRefresh');
+    var out = card.querySelector('#micHealthOut');
+    function loadMicHealth() {
+      if (out) out.innerHTML = '<div class="purge-loading">checking latest recording segment...</div>';
+      if (btn) btn.disabled = true;
+      fetch(apiUrl('birdnet-status.php?action=mic_health'), { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (j) { if (out) out.innerHTML = renderMicHealth(j); })
+        .catch(function (e) { if (out) out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'mic health failed') + '</div>'; })
+        .finally(function () { if (btn) btn.disabled = false; });
+    }
+    if (btn) btn.addEventListener('click', loadMicHealth);
+    loadMicHealth();
+  }
+
   function renderAdminTools() {
     var actions = [
       ['restart birdnet_recording', 'picks up live audio from the mic. restart this first if detections stall.', 'birdnet_recording'],
@@ -3780,6 +3830,15 @@
     html += '</div>';
     html += '<h2 class="admin-section-head">experiments</h2>';
     html += '<div class="admin-actions-grid">';
+    html += '<div class="admin-action mic-health" id="micHealthTool">'
+      + '<h4>mic health</h4>'
+      + '<p>Analyzes the newest BirdNET recording segment for input level, clipping, and background noise.</p>'
+      + '<div class="purge-controls eval-controls">'
+      + '  <label>audio</label>'
+      + '  <button id="micHealthRefresh" type="button">refresh</button>'
+      + '</div>'
+      + '<div id="micHealthOut" class="eval-out"><div class="purge-loading">checking mic health...</div></div>'
+      + '</div>';
     html += '<div class="admin-action filter-eval" id="filterEvalTool">'
       + '<h4>audio filter evaluation</h4>'
       + '<p>Compares the recent window to the previous equal window using BirdNET confidence. Best used after changing filter settings.</p>'
@@ -3832,6 +3891,7 @@
     html += '</div>';
     adminBody.innerHTML = html;
     wirePurgeTool();
+    wireMicHealthTool();
     wireFilterEvalTool();
     wireBirdfyTool();
     // Wire restart buttons + copy buttons.

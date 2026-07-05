@@ -157,6 +157,136 @@ function read_db_age(string $db): array {
     ];
 }
 
+function latest_wav_file(string $dir): ?string {
+    if (!is_dir($dir)) return null;
+    $files = glob($dir . '/*.wav') ?: [];
+    if (!$files) return null;
+    usort($files, function ($a, $b) {
+        return (int)@filemtime($b) <=> (int)@filemtime($a);
+    });
+    return $files[0] ?? null;
+}
+
+function dbfs(float $v): ?float {
+    if ($v <= 0) return null;
+    return round(20 * log10($v), 1);
+}
+
+function mic_verdict(array $m): array {
+    $peak = $m['peak_dbfs'];
+    $rms = $m['rms_dbfs'];
+    $noise = $m['noise_floor_dbfs'];
+    $clip = (float)$m['clipping_pct'];
+    if ($clip > 0.1 || ($peak !== null && $peak > -1.0)) {
+        return ['tone' => 'warn', 'label' => 'too hot', 'explain' => 'Input is clipping or near clipping. Reduce mic gain.'];
+    }
+    if (($peak !== null && $peak < -20.0) || ($rms !== null && $rms < -42.0)) {
+        return ['tone' => 'warn', 'label' => 'too quiet', 'explain' => 'Bird calls may be buried. Increase mic gain or move the mic closer/outside.'];
+    }
+    if ($noise !== null && $noise > -34.0) {
+        return ['tone' => 'warn', 'label' => 'noisy floor', 'explain' => 'Background noise is high. Check HVAC, wind, mounting vibration, and filter settings.'];
+    }
+    return ['tone' => 'good', 'label' => 'usable', 'explain' => 'Levels look usable for BirdNET. Compare detections after tuning confidence and sensitivity.'];
+}
+
+function wav_mic_health(string $path): array {
+    $raw = @file_get_contents($path);
+    if ($raw === false || strlen($raw) < 44) return ['ok' => false, 'error' => 'wav read failed'];
+    if (substr($raw, 0, 4) !== 'RIFF' || substr($raw, 8, 4) !== 'WAVE') {
+        return ['ok' => false, 'error' => 'not a RIFF/WAVE file'];
+    }
+    $pos = 12;
+    $fmt = null;
+    $dataPos = null;
+    $dataLen = null;
+    $len = strlen($raw);
+    while ($pos + 8 <= $len) {
+        $id = substr($raw, $pos, 4);
+        $size = unpack('V', substr($raw, $pos + 4, 4))[1];
+        $chunk = $pos + 8;
+        if ($id === 'fmt ' && $size >= 16) {
+            $u = unpack('vformat/vchannels/VsampleRate/VbyteRate/vblockAlign/vbitsPerSample', substr($raw, $chunk, 16));
+            $fmt = $u;
+        } elseif ($id === 'data') {
+            $dataPos = $chunk;
+            $dataLen = min($size, $len - $chunk);
+            break;
+        }
+        $pos = $chunk + $size + ($size % 2);
+    }
+    if (!$fmt || $dataPos === null || $dataLen === null) return ['ok' => false, 'error' => 'wav missing fmt/data chunk'];
+    if ((int)$fmt['format'] !== 1 || (int)$fmt['bitsPerSample'] !== 16) {
+        return ['ok' => false, 'error' => 'only 16-bit PCM wav is supported'];
+    }
+    $samples = intdiv($dataLen, 2);
+    if ($samples <= 0) return ['ok' => false, 'error' => 'wav has no samples'];
+    $sumSq = 0.0;
+    $peak = 0;
+    $clipped = 0;
+    $windowSamples = max(1, (int)$fmt['sampleRate'] * max(1, (int)$fmt['channels']) / 20);
+    $winSq = 0.0;
+    $winN = 0;
+    $windows = [];
+    for ($i = 0; $i < $samples; $i += 1) {
+        $off = $dataPos + ($i * 2);
+        $u = unpack('v', substr($raw, $off, 2))[1];
+        $s = $u >= 32768 ? $u - 65536 : $u;
+        $a = abs($s);
+        if ($a > $peak) $peak = $a;
+        if ($a >= 32760) $clipped += 1;
+        $norm = $s / 32768.0;
+        $sq = $norm * $norm;
+        $sumSq += $sq;
+        $winSq += $sq;
+        $winN += 1;
+        if ($winN >= $windowSamples) {
+            $windows[] = sqrt($winSq / $winN);
+            $winSq = 0.0;
+            $winN = 0;
+        }
+    }
+    if ($winN > 0) $windows[] = sqrt($winSq / $winN);
+    sort($windows);
+    $noiseRms = $windows ? $windows[(int)floor((count($windows) - 1) * 0.10)] : 0;
+    $peakNorm = min(1.0, $peak / 32768.0);
+    $rmsNorm = sqrt($sumSq / $samples);
+    $duration = $samples / max(1, (int)$fmt['sampleRate'] * max(1, (int)$fmt['channels']));
+    $metrics = [
+        'ok' => true,
+        'file' => basename($path),
+        'age_s' => time() - (int)@filemtime($path),
+        'duration_s' => round($duration, 1),
+        'sample_rate' => (int)$fmt['sampleRate'],
+        'channels' => (int)$fmt['channels'],
+        'peak_dbfs' => dbfs($peakNorm),
+        'rms_dbfs' => dbfs($rmsNorm),
+        'noise_floor_dbfs' => dbfs($noiseRms),
+        'clipping_pct' => round($clipped / $samples * 100, 3),
+    ];
+    $metrics['verdict'] = mic_verdict($metrics);
+    return $metrics;
+}
+
+function read_mic_health(string $dir): array {
+    $file = latest_wav_file($dir);
+    if (!$file) {
+        return [
+            'ok' => false,
+            'error' => 'no recent wav segments found',
+            'message' => 'BirdNET has not written a StreamData wav segment yet.',
+            'as_of' => date('c'),
+        ];
+    }
+    $m = wav_mic_health($file);
+    $m['as_of'] = date('c');
+    $m['source'] = 'latest StreamData segment';
+    if (!empty($m['age_s']) && $m['age_s'] > 300) {
+        $m['stale'] = true;
+        $m['message'] = 'Latest recording segment is older than five minutes; restart birdnet_recording if this stays stale.';
+    }
+    return $m;
+}
+
 function read_conf_summary(string $p): array {
     if (!is_readable($p)) return ['readable' => false];
     $keys = [
@@ -255,6 +385,11 @@ switch ($action) {
 
     case 'services': {
         echo json_encode(['services' => services_status(), 'as_of' => date('c')]);
+        break;
+    }
+
+    case 'mic_health': {
+        echo json_encode(read_mic_health($STREAM_DIR));
         break;
     }
 
