@@ -43,8 +43,15 @@ $ALLOWED = [
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
     'EBIRD_API_KEY'      => ['type' => 'secret', 'maxlen' => 120],
+    'BIRDFY_ENABLED'     => ['type' => 'int',   'min' => 0,    'max' => 1],
+    'BIRDFY_EMAIL'       => ['type' => 'secret_text', 'maxlen' => 180],
+    'BIRDFY_PASSWORD'    => ['type' => 'secret_text', 'maxlen' => 220],
+    'BIRDFY_IMPORT_WINDOW_HOURS' => ['type' => 'int', 'min' => 1, 'max' => 168],
     'AV_NIGHT_START'     => ['type' => 'int',   'min' => 0,    'max' => 23],
     'AV_NIGHT_END'       => ['type' => 'int',   'min' => 0,    'max' => 23],
+    'AV_AUDIO_FILTER'    => ['type' => 'int',   'min' => 0,    'max' => 1, 'restart' => true],
+    'AV_FILTER_HIGHPASS' => ['type' => 'int',   'min' => 20,   'max' => 3000, 'restart' => true],
+    'AV_FILTER_LOWPASS'  => ['type' => 'int',   'min' => 1000, 'max' => 20000, 'restart' => true],
 ];
 
 function read_conf(string $path): array {
@@ -109,6 +116,10 @@ function safe_secret_value(string $v): bool {
     return $v === '' || (bool)preg_match('/^[A-Za-z0-9_.:-]+$/', $v);
 }
 
+function safe_secret_text_value(string $v): bool {
+    return $v === '' || (bool)preg_match('/^[\x20-\x7E]+$/', $v);
+}
+
 function mask_secret(string $v): array {
     $v = trim($v);
     if ($v === '') return ['configured' => false, 'masked' => ''];
@@ -123,6 +134,13 @@ if ($method === 'GET') {
     $conf += [
         'AV_NIGHT_START' => '21',
         'AV_NIGHT_END' => '5',
+        'AV_AUDIO_FILTER' => '0',
+        'AV_FILTER_HIGHPASS' => '300',
+        'AV_FILTER_LOWPASS' => '10000',
+        'BIRDFY_ENABLED' => '0',
+        'BIRDFY_EMAIL' => '',
+        'BIRDFY_PASSWORD' => '',
+        'BIRDFY_IMPORT_WINDOW_HOURS' => '24',
     ];
     $out = [];
     foreach ($ALLOWED as $k => $spec) {
@@ -130,7 +148,7 @@ if ($method === 'GET') {
         $v = $conf[$k];
         if ($spec['type'] === 'float') $v = (float)$v;
         elseif ($spec['type'] === 'int') $v = (int)$v;
-        elseif ($spec['type'] === 'secret') { $out[$k] = mask_secret((string)$v); continue; }
+        elseif ($spec['type'] === 'secret' || $spec['type'] === 'secret_text') { $out[$k] = mask_secret((string)$v); continue; }
         $out[$k] = $v;
     }
     echo json_encode([
@@ -171,10 +189,11 @@ if ($method === 'POST') {
             // reject anything outside a known-safe punctuation set so a
             // bash metacharacter can't get there even if quote_val regresses.
             if (!safe_string_value($v)) { $errors[$k] = 'invalid characters'; continue; }
-        } elseif ($spec['type'] === 'secret') {
+        } elseif ($spec['type'] === 'secret' || $spec['type'] === 'secret_text') {
             $v = trim((string)$v);
             if (strlen($v) > ($spec['maxlen'] ?? 200)) { $errors[$k] = 'too long'; continue; }
-            if (!safe_secret_value($v)) { $errors[$k] = 'invalid characters'; continue; }
+            if ($spec['type'] === 'secret' && !safe_secret_value($v)) { $errors[$k] = 'invalid characters'; continue; }
+            if ($spec['type'] === 'secret_text' && !safe_secret_text_value($v)) { $errors[$k] = 'invalid characters'; continue; }
         }
         $updates[$k] = $v;
     }
@@ -209,7 +228,13 @@ if ($method === 'POST') {
             $restarted[$svc] = $rc === 0;
         }
     }
-    echo json_encode(['ok' => true, 'updates' => $updates, 'restarted' => $restarted]);
+    $responseUpdates = $updates;
+    foreach ($responseUpdates as $k => $v) {
+        if (isset($ALLOWED[$k]) && in_array($ALLOWED[$k]['type'], ['secret', 'secret_text'], true)) {
+            $responseUpdates[$k] = mask_secret((string)$v);
+        }
+    }
+    echo json_encode(['ok' => true, 'updates' => $responseUpdates, 'restarted' => $restarted]);
     exit;
 }
 

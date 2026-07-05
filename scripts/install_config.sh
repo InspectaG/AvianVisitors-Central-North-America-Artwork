@@ -276,6 +276,23 @@ AUTOMATIC_UPDATE=0
 
 RAW_SPECTROGRAM=0
 
+## AV_AUDIO_FILTER enables a simple audio band-pass pre-filter before
+## BirdNET analysis. This can reduce steady low-frequency rumble from HVAC,
+## road noise, and some mowers, but it is not a substitute for microphone
+## placement. Defaults are conservative and disabled until explicitly enabled.
+
+AV_AUDIO_FILTER=0
+AV_FILTER_HIGHPASS=300
+AV_FILTER_LOWPASS=10000
+
+## Birdfy camera integration. Credentials stay local in birdnet.conf and are
+## only used by the AvianVisitors API to mark camera-seen birds in the collage.
+
+BIRDFY_ENABLED=0
+BIRDFY_EMAIL=
+BIRDFY_PASSWORD=
+BIRDFY_IMPORT_WINDOW_HOURS=24
+
 ## CUSTOM_IMAGE and CUSTOM_IMAGE_TITLE allow you to show a custom image on the
 ## Overview page of your BirdNET-Pi. This can be used to show a dynamically 
 ## updating picture of your garden, for example.

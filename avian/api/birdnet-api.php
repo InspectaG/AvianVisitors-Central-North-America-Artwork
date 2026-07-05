@@ -12,6 +12,7 @@
 //   firstseen   - every species' earliest detection
 //   seasonfirst - every species' first detection since Jan 1
 //   ebird_nearby - eBird recent nearby reports, matched by scientific name
+//   filter_eval - compare recent detections against the prior equal window
 //
 // Default LAN deploy ships without auth. If you've exposed the Pi via
 // Cloudflare or a tunnel, add a Caddy `basic_auth` matcher around the
@@ -427,6 +428,129 @@ switch ($action) {
         echo json_encode([
             'season_start' => $seasonStart,
             'species' => $rs,
+            'as_of' => date('c'),
+        ]);
+        break;
+    }
+
+    case 'filter_eval': {
+        // Compares the most recent window to the immediately preceding
+        // equal window. Existing detections do not record whether the
+        // audio filter was enabled, so this is a practical A/B signal,
+        // not a controlled lab result.
+        $hours = max(1, min(168, (int)($_GET['hours'] ?? 24)));
+        $high = max(0.5, min(0.99, (float)($_GET['high'] ?? 0.80)));
+        $low = max(0.01, min($high, (float)($_GET['low'] ?? 0.60)));
+        $age = "(julianday('now','localtime') - julianday(Date||' '||Time)) * 24";
+
+        $summary = function (float $minAge, float $maxAge) use ($db, $age, $high, $low, $hours): array {
+            $r = one($db,
+              "SELECT COUNT(*) AS detections, COUNT(DISTINCT Sci_Name) AS species, "
+            . "       AVG(Confidence) AS avg_conf, "
+            . "       SUM(CASE WHEN Confidence >= :high THEN 1 ELSE 0 END) AS high_count, "
+            . "       SUM(CASE WHEN Confidence < :low THEN 1 ELSE 0 END) AS low_count, "
+            . "       MIN(Date||' '||Time) AS oldest, MAX(Date||' '||Time) AS newest "
+            . "FROM detections WHERE $age > :min_age AND $age <= :max_age",
+              [':min_age' => $minAge, ':max_age' => $maxAge, ':high' => $high, ':low' => $low]
+            ) ?: [];
+            $detections = (int)($r['detections'] ?? 0);
+            $highCount = (int)($r['high_count'] ?? 0);
+            $lowCount = (int)($r['low_count'] ?? 0);
+            return [
+                'detections' => $detections,
+                'species' => (int)($r['species'] ?? 0),
+                'avg_conf' => $r['avg_conf'] === null ? null : round((float)$r['avg_conf'], 4),
+                'high_count' => $highCount,
+                'low_count' => $lowCount,
+                'high_rate' => $detections ? round($highCount / $detections, 4) : null,
+                'low_rate' => $detections ? round($lowCount / $detections, 4) : null,
+                'detections_per_hour' => round($detections / max(1, $hours), 3),
+                'oldest' => $r['oldest'] ?? null,
+                'newest' => $r['newest'] ?? null,
+            ];
+        };
+
+        $speciesRows = function (float $minAge, float $maxAge) use ($db, $age): array {
+            return rows($db,
+              "SELECT Sci_Name AS sci, Com_Name AS com, COUNT(*) AS n, "
+            . "       AVG(Confidence) AS avg_conf, MAX(Confidence) AS best_conf, "
+            . "       MAX(Date||' '||Time) AS last_seen "
+            . "FROM detections WHERE $age > :min_age AND $age <= :max_age "
+            . "GROUP BY Sci_Name ORDER BY n DESC, best_conf DESC",
+              [':min_age' => $minAge, ':max_age' => $maxAge]
+            );
+        };
+
+        $before = $summary((float)$hours, (float)$hours * 2);
+        $after = $summary(0.0, (float)$hours);
+        $beforeSpecies = $speciesRows((float)$hours, (float)$hours * 2);
+        $afterSpecies = $speciesRows(0.0, (float)$hours);
+
+        $beforeMap = [];
+        foreach ($beforeSpecies as $s) $beforeMap[(string)$s['sci']] = $s;
+        $afterMap = [];
+        foreach ($afterSpecies as $s) $afterMap[(string)$s['sci']] = $s;
+        $retained = 0;
+        foreach ($afterMap as $sci => $_) if (isset($beforeMap[$sci])) $retained++;
+        $lost = [];
+        foreach ($beforeSpecies as $s) if (!isset($afterMap[(string)$s['sci']]) && count($lost) < 8) $lost[] = $s;
+        $gained = [];
+        foreach ($afterSpecies as $s) if (!isset($beforeMap[(string)$s['sci']]) && count($gained) < 8) $gained[] = $s;
+
+        $deltaAvg = ($after['avg_conf'] === null || $before['avg_conf'] === null) ? null : round($after['avg_conf'] - $before['avg_conf'], 4);
+        $deltaHigh = ($after['high_rate'] === null || $before['high_rate'] === null) ? null : round($after['high_rate'] - $before['high_rate'], 4);
+        $deltaLow = ($after['low_rate'] === null || $before['low_rate'] === null) ? null : round($after['low_rate'] - $before['low_rate'], 4);
+        $retention = count($beforeMap) ? round($retained / count($beforeMap), 4) : null;
+        $score = 0.0;
+        $enough = $before['detections'] >= 5 && $after['detections'] >= 5;
+        if ($enough) {
+            if ($deltaAvg !== null) $score += max(-10, min(10, $deltaAvg * 100));
+            if ($deltaHigh !== null) $score += max(-8, min(8, $deltaHigh * 20));
+            if ($deltaLow !== null) $score -= max(-8, min(8, $deltaLow * 20));
+            if ($retention !== null) $score += max(-4, min(4, ($retention - 0.75) * 8));
+        }
+        if (!$enough) {
+            $label = 'not enough data';
+            $tone = 'neutral';
+            $explain = 'Need at least 5 detections in both windows for a useful comparison.';
+        } elseif ($score >= 4) {
+            $label = 'likely helping';
+            $tone = 'good';
+            $explain = 'Recent detections look stronger than the previous comparable window.';
+        } elseif ($score <= -4) {
+            $label = 'possibly hurting';
+            $tone = 'warn';
+            $explain = 'Recent detections look weaker than the previous comparable window.';
+        } else {
+            $label = 'inconclusive';
+            $tone = 'neutral';
+            $explain = 'The confidence and species changes are too small to call.';
+        }
+
+        $conf = read_birdnet_conf(dirname(__DIR__, 2) . '/birdnet.conf');
+        echo json_encode([
+            'hours' => $hours,
+            'thresholds' => ['high' => $high, 'low' => $low],
+            'settings' => [
+                'filter_enabled' => (int)($conf['AV_AUDIO_FILTER'] ?? 0) === 1,
+                'highpass' => (int)($conf['AV_FILTER_HIGHPASS'] ?? 300),
+                'lowpass' => (int)($conf['AV_FILTER_LOWPASS'] ?? 10000),
+            ],
+            'before' => $before,
+            'after' => $after,
+            'delta' => [
+                'avg_conf' => $deltaAvg,
+                'high_rate' => $deltaHigh,
+                'low_rate' => $deltaLow,
+                'species_retention' => $retention,
+                'score' => round($score, 2),
+            ],
+            'species' => [
+                'retained' => $retained,
+                'lost' => $lost,
+                'gained' => $gained,
+            ],
+            'verdict' => ['label' => $label, 'tone' => $tone, 'explain' => $explain],
             'as_of' => date('c'),
         ]);
         break;

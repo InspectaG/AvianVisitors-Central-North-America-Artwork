@@ -281,6 +281,22 @@
   .menu-row .label {
     font: 12.5px ui-serif, Georgia, serif; color: var(--ink);
   }
+  .menu-row-compact .label {
+    font-size: 11px;
+  }
+  .setting-tag {
+    display: inline-block;
+    margin-left: 7px;
+    padding: 2px 5px 1px;
+    border-radius: 4px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+    color: var(--accent);
+    font: 800 8px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+    vertical-align: 1px;
+  }
   .hint {
     display: block;
     font: 9px ui-monospace, Menlo, monospace;
@@ -811,6 +827,30 @@
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
+  }
+  .collage-visual-badge {
+    position: absolute;
+    right: -18px;
+    bottom: -16px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: clamp(20px, 3vw, 28px);
+    height: clamp(20px, 3vw, 28px);
+    border-radius: 999px;
+    background: #eef5f0;
+    color: #2f6f53;
+    box-shadow: var(--edge), inset 0 0 0 1px rgba(47,111,83,0.16);
+    pointer-events: none;
+  }
+  .collage-visual-badge svg {
+    width: 68%;
+    height: 68%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   /* Hover pill - surfaces the windowed count for the bird under the
      cursor. Confirms (Anna's-hummingbird-is-#1 paranoia) that the
@@ -2362,6 +2402,152 @@
       linear-gradient(135deg, currentColor 50%, transparent 50%) calc(100% - 10px) 50% / 5px 5px no-repeat,
       var(--paper-2);
   }
+  .eval-controls {
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+  }
+  .eval-controls button {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: var(--ink);
+    color: var(--paper);
+    cursor: pointer;
+    font: 9.5px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.1em;
+    text-transform: lowercase;
+  }
+  .eval-controls button:disabled { opacity: .45; cursor: wait; }
+  .admin-action.filter-eval {
+    grid-column: 1 / -1;
+    box-shadow: inset 0 0 0 1px rgba(74,111,82,0.16), var(--edge);
+  }
+  .admin-action.birdfy-tool {
+    grid-column: 1 / -1;
+    box-shadow: inset 0 0 0 1px rgba(62,98,125,0.16), var(--edge);
+  }
+  .birdfy-status {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .birdfy-status div {
+    min-width: 0;
+    padding: 9px 8px 8px;
+    border-radius: 7px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .birdfy-status strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 700 18px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .birdfy-status span,
+  .birdfy-note {
+    display: block;
+    font: 9px/1.35 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    text-transform: lowercase;
+  }
+  .birdfy-note {
+    margin-top: 7px;
+  }
+  .eval-verdict {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 7px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+    margin-bottom: 10px;
+  }
+  .eval-verdict strong {
+    font: 800 10px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.12em;
+    text-transform: lowercase;
+  }
+  .eval-verdict span {
+    font: 11px/1.35 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+  }
+  .eval-verdict.good strong { color: #2d5d3a; }
+  .eval-verdict.warn strong { color: var(--accent); }
+  .eval-settings,
+  .eval-species {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 8px 0 10px;
+  }
+  .eval-settings span,
+  .eval-species span,
+  .eval-empty {
+    display: inline-block;
+    border-radius: 999px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+    padding: 4px 8px;
+    font: 9.5px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    text-transform: lowercase;
+  }
+  .eval-metrics,
+  .eval-counts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .eval-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .eval-metric,
+  .eval-counts div {
+    min-width: 0;
+    padding: 9px 8px 8px;
+    border-radius: 7px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .eval-metric span,
+  .eval-counts span,
+  .eval-metric small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 9px/1.25 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    text-transform: lowercase;
+  }
+  .eval-metric strong,
+  .eval-counts strong {
+    display: block;
+    margin: 4px 0 2px;
+    font: 700 20px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .eval-delta { display: inline; letter-spacing: 0; text-transform: none; }
+  .eval-delta.up { color: #2d5d3a; }
+  .eval-delta.down { color: var(--accent); }
+  .eval-species {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .eval-species div { min-width: 0; }
+  .eval-species h5 {
+    margin: 0 0 6px;
+    font: 9px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.12em;
+    color: var(--ink-soft);
+    text-transform: lowercase;
+  }
   .purge-preview {
     min-height: 70px;
     margin: 10px 0;
@@ -2478,6 +2664,10 @@
     table.admin-tbl th, table.admin-tbl td { padding: 7px 8px; font-size: 11px; }
     .admin-actions-grid { gap: 10px; grid-template-columns: 1fr; }
     .admin-action { padding: 12px 14px; }
+    .eval-controls { grid-template-columns: 52px minmax(0, 1fr); }
+    .eval-controls button { grid-column: 2; }
+    .eval-verdict { grid-template-columns: 1fr; gap: 4px; }
+    .eval-metrics, .eval-counts, .eval-species { grid-template-columns: 1fr; }
     /* Slider track bottom nav: tuck closer to bottom edge */
     .slider { bottom: 14px; padding: 3px; }
     .slider button { font-size: 9.5px; padding: 6px 11px; }

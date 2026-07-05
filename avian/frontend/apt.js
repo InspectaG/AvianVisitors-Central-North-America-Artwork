@@ -839,7 +839,8 @@
         ? '<span class="collage-rarity-badge" data-rarity="' + rarity.key + '">' + rarity.label + rarityLegendHtml() + '</span>'
         : '';
       var seasonBadge = isSeasonFirstInWindow(s.sci) ? seasonFirstBadgeHtml(true) : '';
-      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">' + badge + seasonBadge;
+      var visualBadge = visualBadgeHtml(visualSeenFor(s.sci, s.com));
+      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">' + badge + seasonBadge + visualBadge;
       r.el = btn;
       collage.appendChild(btn);
     });
@@ -1127,6 +1128,7 @@
     seasonfirst: null,  // ./avian/api/birdnet-api.php?action=seasonfirst (first detections since Jan 1)
     recent: null,       // ./avian/api/birdnet-api.php?action=recent&hours=N (refetched on picker change)
     ebirdNearby: null,  // ./avian/api/birdnet-api.php?action=ebird_nearby (recent eBird reports near the Pi)
+    visual: null,       // ./avian/api/birdfy-api.php?action=visual_summary&hours=N (camera detections)
     overnight: null,    // configured night-hours species summary for the active stats window
     nightCollage: null, // configured night-hours species summary for the moon reveal, fixed at the last 7 days
   };
@@ -1161,6 +1163,28 @@
     return '<span class="' + (compact ? 'season-first-dot' : 'season-first-badge') + '" title="First detection this season" aria-label="First detection this season">'
       + '<span class="ribbon-num">1</span>'
       + '<span class="ribbon-label">season first</span>'
+      + '</span>';
+  }
+
+  function birdNameKey(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+  function visualSeenFor(sci, com) {
+    var rows = (DATA.visual && DATA.visual.species) || [];
+    var sciKey = String(sci || '');
+    var comKey = birdNameKey(com);
+    for (var i = 0; i < rows.length; i += 1) {
+      if (rows[i].sci && rows[i].sci === sciKey) return rows[i];
+      if (comKey && birdNameKey(rows[i].com) === comKey) return rows[i];
+    }
+    return null;
+  }
+  function visualBadgeHtml(info) {
+    if (!info) return '';
+    var count = +info.n || 1;
+    var title = 'Seen by Birdfy camera' + (count > 1 ? ' · ' + count + ' sightings' : '');
+    return '<span class="collage-visual-badge" title="' + attrEsc(title) + '" aria-label="' + attrEsc(title) + '">'
+      + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 12s3.5-5.8 9.2-5.8S21.2 12 21.2 12 17.7 17.8 12 17.8 2.8 12 2.8 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>'
       + '</span>';
   }
 
@@ -2124,12 +2148,14 @@
       fetchJson(apiUrl('birdnet-api.php?action=recent&hours=' + forHours)).catch(function () { return null; }),
       fetchJson(nightApiUrl(forHours, 6)).catch(function () { return null; }),
       fetchJson(nightApiUrl(nightCollageHours, 6)).catch(function () { return null; }),
+      fetchJson(apiUrl('birdfy-api.php?action=visual_summary&hours=' + forHours)).catch(function () { return null; }),
     ]).then(function (parts) {
         if (forHours !== currentHours) return; // window changed mid-flight
         if (parts[0]) DATA.recent = parts[0];
         applyNightWindowFromResponse(parts[1] || parts[2]);
         DATA.overnight = parts[1] || { species: [], hours: forHours, as_of: Date.now(), error: true };
         DATA.nightCollage = parts[2] || DATA.overnight;
+        DATA.visual = parts[3] || DATA.visual;
         renderWindowDependent();
       })
       .catch(function (e) { console.warn('recent fetch failed', e); });
@@ -2157,6 +2183,7 @@
       fetchJson(apiUrl('birdnet-api.php?action=recent&hours=' + forHours)).catch(function () { return null; }),
       fetchJson(nightApiUrl(forHours, 6)).catch(function () { return null; }),
       fetchJson(nightApiUrl(nightCollageHours, 6)).catch(function () { return null; }),
+      fetchJson(apiUrl('birdfy-api.php?action=visual_summary&hours=' + forHours)).catch(function () { return null; }),
     ]).then(function (parts) {
       DATA.stats = parts[0];
       DATA.lifelist = parts[1];
@@ -2169,6 +2196,7 @@
       applyNightWindowFromResponse(parts[6] || parts[7]);
       if (forHours === currentHours) DATA.overnight = parts[6] || { species: [], hours: forHours, as_of: Date.now(), error: true };
       DATA.nightCollage = parts[7] || DATA.overnight;
+      if (forHours === currentHours) DATA.visual = parts[8] || DATA.visual;
       recomputeDerived();
       renderTimeIndependent();
       renderCollageFromData();
@@ -2482,6 +2510,13 @@
           + settingsSlider('CONFIDENCE',  'Confidence threshold', 'min score to log a detection', v.CONFIDENCE,  0.1, 0.95, 0.05, 2)
           + settingsSlider('SENSITIVITY', 'Sensitivity',          'analyzer sensitivity',          v.SENSITIVITY, 0.5, 1.5,  0.05, 2)
           + settingsSlider('OVERLAP',     'Chunk overlap',        'seconds analyzed per pass',     v.OVERLAP,     0,   2.5,  0.1,  1)
+          + settingsToggle('AV_AUDIO_FILTER', 'Bird audio filter', 'band-pass mic audio before analysis', +v.AV_AUDIO_FILTER === 1, 'experimental')
+          + settingsSlider('AV_FILTER_HIGHPASS', 'High-pass cutoff', 'reduces HVAC and low rumble, Hz', v.AV_FILTER_HIGHPASS, 20, 3000, 20, 0)
+          + settingsSlider('AV_FILTER_LOWPASS',  'Low-pass cutoff',  'reduces high hiss, Hz',           v.AV_FILTER_LOWPASS, 1000, 20000, 100, 0)
+          + settingsToggle('BIRDFY_ENABLED', 'Birdfy camera import', 'mark camera-seen birds on the collage', +v.BIRDFY_ENABLED === 1, 'experimental')
+          + settingsSecret('BIRDFY_EMAIL', 'Birdfy email', 'stored locally; never shown after save', v.BIRDFY_EMAIL)
+          + settingsSecret('BIRDFY_PASSWORD', 'Birdfy password', 'stored locally; never shown after save', v.BIRDFY_PASSWORD)
+          + settingsSlider('BIRDFY_IMPORT_WINDOW_HOURS', 'Birdfy import window', 'hours of camera detections to check', v.BIRDFY_IMPORT_WINDOW_HOURS || 24, 1, 168, 1, 0)
           + settingsHourSelect('AV_NIGHT_START', 'Night starts', 'used by moon reveal and Night Visitors', v.AV_NIGHT_START)
           + settingsHourSelect('AV_NIGHT_END',   'Night ends',   'calls before this hour count as night', v.AV_NIGHT_END)
           + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
@@ -2506,10 +2541,12 @@
       });
   }
 
-  function settingsToggle(key, label, hint, on) {
+  function settingsToggle(key, label, hint, on, tag) {
+    var rowClass = key === 'AV_AUDIO_FILTER' ? ' menu-row-compact' : '';
     return ''
-      + '<div class="menu-row">'
+      + '<div class="menu-row' + rowClass + '">'
       + '  <div><span class="label">' + label + '</span>'
+      +     (tag ? '<span class="setting-tag">' + tag + '</span>' : '')
       +     (hint ? '<span class="hint">' + hint + '</span>' : '')
       + '  </div>'
       + '  <button type="button" class="switch" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" data-key="' + key + '"></button>'
@@ -2534,6 +2571,7 @@
     state = state || {};
     var configured = !!state.configured;
     var masked = state.masked || '';
+    var emptyPlaceholder = key === 'EBIRD_API_KEY' ? 'paste eBird API key' : 'enter value';
     return ''
       + '<div class="secret-row" data-secret-key="' + key + '">'
       + '  <div class="head">'
@@ -2543,7 +2581,7 @@
       + '    <span class="secret-state" data-secret-state="' + (configured ? 'set' : 'empty') + '">' + (configured ? ('configured ' + masked) : 'not set') + '</span>'
       + '  </div>'
       + '  <div class="secret-control">'
-      + '    <input type="password" autocomplete="off" spellcheck="false" placeholder="' + (configured ? 'enter a new key to replace' : 'paste eBird API key') + '" data-key="' + key + '">'
+      + '    <input type="password" autocomplete="off" spellcheck="false" placeholder="' + (configured ? 'enter a new value to replace' : emptyPlaceholder) + '" data-key="' + key + '">'
       + '    <button type="button" data-secret-clear="' + key + '">clear</button>'
       + '  </div>'
       + '</div>';
@@ -3248,6 +3286,13 @@
           + settingsSlider('CONFIDENCE',  'Confidence threshold', 'min score to log a detection', v.CONFIDENCE,  0.1, 0.95, 0.05, 2)
           + settingsSlider('SENSITIVITY', 'Sensitivity',          'analyzer sensitivity',          v.SENSITIVITY, 0.5, 1.5,  0.05, 2)
           + settingsSlider('OVERLAP',     'Chunk overlap',        'seconds analyzed per pass',     v.OVERLAP,     0,   2.5,  0.1,  1)
+          + settingsToggle('AV_AUDIO_FILTER', 'Bird audio filter', 'band-pass mic audio before analysis', +v.AV_AUDIO_FILTER === 1, 'experimental')
+          + settingsSlider('AV_FILTER_HIGHPASS', 'High-pass cutoff', 'reduces HVAC and low rumble, Hz', v.AV_FILTER_HIGHPASS, 20, 3000, 20, 0)
+          + settingsSlider('AV_FILTER_LOWPASS',  'Low-pass cutoff',  'reduces high hiss, Hz',           v.AV_FILTER_LOWPASS, 1000, 20000, 100, 0)
+          + settingsToggle('BIRDFY_ENABLED', 'Birdfy camera import', 'mark camera-seen birds on the collage', +v.BIRDFY_ENABLED === 1, 'experimental')
+          + settingsSecret('BIRDFY_EMAIL', 'Birdfy email', 'stored locally; never shown after save', v.BIRDFY_EMAIL)
+          + settingsSecret('BIRDFY_PASSWORD', 'Birdfy password', 'stored locally; never shown after save', v.BIRDFY_PASSWORD)
+          + settingsSlider('BIRDFY_IMPORT_WINDOW_HOURS', 'Birdfy import window', 'hours of camera detections to check', v.BIRDFY_IMPORT_WINDOW_HOURS || 24, 1, 168, 1, 0)
           + settingsHourSelect('AV_NIGHT_START', 'Night starts', 'used by moon reveal and Night Visitors', v.AV_NIGHT_START)
           + settingsHourSelect('AV_NIGHT_END',   'Night ends',   'calls before this hour count as night', v.AV_NIGHT_END)
           + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
@@ -3528,7 +3573,7 @@
           var d = res.j.deleted || {};
           setOut('deleted ' + (d.detections || 0) + ' detections and ' + (d.files || 0) + ' recordings', 'ok');
           DATA.stats = DATA.recent = DATA.lifelist = DATA.timeseries = DATA.firstseen = DATA.seasonfirst = null;
-          DATA.ebirdNearby = DATA.overnight = DATA.nightCollage = null;
+          DATA.ebirdNearby = DATA.visual = DATA.overnight = DATA.nightCollage = null;
           SPECIES_CACHE = {};
           if (confirmInput) confirmInput.value = '';
           refreshRecent();
@@ -3544,6 +3589,149 @@
         });
     });
     loadPreview();
+  }
+
+  function evalPct(v) {
+    return v == null || !isFinite(+v) ? '-' : Math.round(+v * 100) + '%';
+  }
+
+  function evalConf(v) {
+    return v == null || !isFinite(+v) ? '-' : (+v * 100).toFixed(1) + '%';
+  }
+
+  function evalDelta(v, pct) {
+    if (v == null || !isFinite(+v)) return '<span class="eval-delta">-</span>';
+    var n = +v;
+    var cls = n > 0 ? 'up' : (n < 0 ? 'down' : 'flat');
+    var sign = n > 0 ? '+' : '';
+    var text = pct ? (sign + Math.round(n * 100) + ' pts') : (sign + (n * 100).toFixed(1) + '%');
+    return '<span class="eval-delta ' + cls + '">' + adminEsc(text) + '</span>';
+  }
+
+  function evalSpeciesList(rows) {
+    rows = rows || [];
+    if (!rows.length) return '<span class="eval-empty">none</span>';
+    return rows.slice(0, 5).map(function (s) {
+      return '<span>' + adminEsc(s.com || s.sci || 'unknown') + '</span>';
+    }).join('');
+  }
+
+  function renderFilterEval(j) {
+    var before = j.before || {}, after = j.after || {}, delta = j.delta || {};
+    var verdict = j.verdict || { label: 'unknown', tone: 'neutral', explain: '' };
+    var settings = j.settings || {};
+    return ''
+      + '<div class="eval-verdict ' + adminEsc(verdict.tone || 'neutral') + '">'
+      + '  <strong>' + adminEsc(verdict.label || 'unknown') + '</strong>'
+      + '  <span>' + adminEsc(verdict.explain || '') + '</span>'
+      + '</div>'
+      + '<div class="eval-settings">'
+      + '  <span>filter ' + (settings.filter_enabled ? 'on' : 'off') + '</span>'
+      + '  <span>high-pass ' + adminEsc(settings.highpass || '-') + ' hz</span>'
+      + '  <span>low-pass ' + adminEsc(settings.lowpass || '-') + ' hz</span>'
+      + '</div>'
+      + '<div class="eval-metrics">'
+      + evalMetric('avg confidence', evalConf(before.avg_conf), evalConf(after.avg_conf), evalDelta(delta.avg_conf, false))
+      + evalMetric('high-confidence rate', evalPct(before.high_rate), evalPct(after.high_rate), evalDelta(delta.high_rate, true))
+      + evalMetric('low-confidence pressure', evalPct(before.low_rate), evalPct(after.low_rate), evalDelta(delta.low_rate, true))
+      + evalMetric('species retained', adminEsc(before.species || 0), adminEsc(after.species || 0), '<span class="eval-delta">' + evalPct(delta.species_retention) + '</span>')
+      + '</div>'
+      + '<div class="eval-counts">'
+      + '  <div><strong>' + adminEsc(before.detections || 0) + '</strong><span>previous detections</span></div>'
+      + '  <div><strong>' + adminEsc(after.detections || 0) + '</strong><span>recent detections</span></div>'
+      + '  <div><strong>' + adminEsc((delta.score == null ? '-' : delta.score)) + '</strong><span>score</span></div>'
+      + '</div>'
+      + '<div class="eval-species">'
+      + '  <div><h5>new in recent window</h5>' + evalSpeciesList((j.species || {}).gained) + '</div>'
+      + '  <div><h5>missing from recent window</h5>' + evalSpeciesList((j.species || {}).lost) + '</div>'
+      + '</div>';
+  }
+
+  function evalMetric(label, before, after, deltaHtml) {
+    return '<div class="eval-metric">'
+      + '<span>' + adminEsc(label) + '</span>'
+      + '<strong>' + adminEsc(after) + '</strong>'
+      + '<small>was ' + adminEsc(before) + ' ' + deltaHtml + '</small>'
+      + '</div>';
+  }
+
+  function wireFilterEvalTool() {
+    var card = document.getElementById('filterEvalTool');
+    if (!card) return;
+    var range = card.querySelector('#filterEvalRange');
+    var btn = card.querySelector('#filterEvalRefresh');
+    var out = card.querySelector('#filterEvalOut');
+    function loadEval() {
+      var hours = +(range && range.value) || 24;
+      out.innerHTML = '<div class="purge-loading">evaluating comparable windows...</div>';
+      if (btn) btn.disabled = true;
+      fetch(apiUrl('birdnet-api.php?action=filter_eval&hours=' + encodeURIComponent(hours)), {
+        credentials: 'same-origin', cache: 'no-store',
+      })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (j) { out.innerHTML = renderFilterEval(j); })
+        .catch(function (e) { out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'evaluation failed') + '</div>'; })
+        .finally(function () { if (btn) btn.disabled = false; });
+    }
+    if (range) range.addEventListener('change', loadEval);
+    if (btn) btn.addEventListener('click', loadEval);
+    loadEval();
+  }
+
+  function renderBirdfyStatus(j) {
+    if (!j) return '<div class="purge-loading">loading Birdfy status...</div>';
+    var state = j.enabled ? 'enabled' : 'disabled';
+    var configured = j.configured ? 'configured' : 'not configured';
+    var localCount = j.local_count == null ? '-' : j.local_count;
+    var lastSeen = j.last_seen || '-';
+    var message = j.message || j.error || '';
+    return ''
+      + '<div class="birdfy-status">'
+      + '  <div><strong>' + adminEsc(state) + '</strong><span>import</span></div>'
+      + '  <div><strong>' + adminEsc(configured) + '</strong><span>login</span></div>'
+      + '  <div><strong>' + adminEsc(localCount) + '</strong><span>camera rows</span></div>'
+      + '</div>'
+      + '<div class="birdfy-note">last seen ' + adminEsc(lastSeen) + '</div>'
+      + (message ? '<div class="birdfy-note">' + adminEsc(message) + '</div>' : '');
+  }
+
+  function wireBirdfyTool() {
+    var card = document.getElementById('birdfyTool');
+    if (!card) return;
+    var out = card.querySelector('#birdfyOut');
+    var refresh = card.querySelector('#birdfyRefresh');
+    var sync = card.querySelector('#birdfySync');
+    function loadStatus() {
+      if (out) out.innerHTML = '<div class="purge-loading">loading Birdfy status...</div>';
+      if (refresh) refresh.disabled = true;
+      fetch(apiUrl('birdfy-api.php?action=status'), { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (j) { if (out) out.innerHTML = renderBirdfyStatus(j); })
+        .catch(function (e) { if (out) out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'Birdfy status failed') + '</div>'; })
+        .finally(function () { if (refresh) refresh.disabled = false; });
+    }
+    function runSync() {
+      if (out) out.innerHTML = '<div class="purge-loading">probing Birdfy...</div>';
+      if (sync) sync.disabled = true;
+      fetch(apiUrl('birdfy-api.php?action=sync'), { method: 'POST', credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          var j = res.j || {};
+          if (!res.ok || !j.ok) {
+            if (out) out.innerHTML = '<div class="out err">' + adminEsc(j.error || 'Birdfy sync failed') + '</div>';
+            return;
+          }
+          if (out) out.innerHTML = renderBirdfyStatus(j)
+            + '<div class="out ok">imported ' + adminEsc(j.imported || 0) + ' events</div>';
+          DATA.visual = null;
+          refreshRecent();
+        })
+        .catch(function (e) { if (out) out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'Birdfy sync failed') + '</div>'; })
+        .finally(function () { if (sync) sync.disabled = false; });
+    }
+    if (refresh) refresh.addEventListener('click', loadStatus);
+    if (sync) sync.addEventListener('click', runSync);
+    loadStatus();
   }
 
   function renderAdminTools() {
@@ -3590,6 +3778,35 @@
       + '<div class="out purge-out" id="purgeOut"></div>'
       + '</div>';
     html += '</div>';
+    html += '<h2 class="admin-section-head">experiments</h2>';
+    html += '<div class="admin-actions-grid">';
+    html += '<div class="admin-action filter-eval" id="filterEvalTool">'
+      + '<h4>audio filter evaluation</h4>'
+      + '<p>Compares the recent window to the previous equal window using BirdNET confidence. Best used after changing filter settings.</p>'
+      + '<div class="purge-controls eval-controls">'
+      + '  <label for="filterEvalRange">range</label>'
+      + '  <select id="filterEvalRange">'
+      + '    <option value="6">6 hours</option>'
+      + '    <option value="12">12 hours</option>'
+      + '    <option value="24" selected>24 hours</option>'
+      + '    <option value="48">48 hours</option>'
+      + '    <option value="168">7 days</option>'
+      + '  </select>'
+      + '  <button id="filterEvalRefresh" type="button">refresh</button>'
+      + '</div>'
+      + '<div id="filterEvalOut" class="eval-out"><div class="purge-loading">loading evaluation...</div></div>'
+      + '</div>';
+    html += '<div class="admin-action birdfy-tool" id="birdfyTool">'
+      + '<h4>Birdfy camera sync</h4>'
+      + '<p>Checks the local camera-sighting table and probes Birdfy login/device access. Camera-seen birds get an eye badge on the collage.</p>'
+      + '<div class="purge-controls eval-controls">'
+      + '  <label>birdfy</label>'
+      + '  <button id="birdfyRefresh" type="button">status</button>'
+      + '  <button id="birdfySync" type="button">sync</button>'
+      + '</div>'
+      + '<div id="birdfyOut" class="eval-out"><div class="purge-loading">loading Birdfy status...</div></div>'
+      + '</div>';
+    html += '</div>';
     html += '<h2 class="admin-section-head">heal / update</h2>';
     html += '<div class="admin-actions-grid">';
     function deployCard(title, desc, lines) {
@@ -3615,6 +3832,8 @@
     html += '</div>';
     adminBody.innerHTML = html;
     wirePurgeTool();
+    wireFilterEvalTool();
+    wireBirdfyTool();
     // Wire restart buttons + copy buttons.
     adminBody.querySelectorAll('.admin-action button.run').forEach(function (b) {
       b.addEventListener('click', function () {
