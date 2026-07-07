@@ -43,6 +43,8 @@ $ALLOWED = [
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
     'EBIRD_API_KEY'      => ['type' => 'secret', 'maxlen' => 120],
+    'GEMINI_API_KEY'     => ['type' => 'secret', 'maxlen' => 180],
+    'EBIRD_REGION'       => ['type' => 'region', 'maxlen' => 32],
     'BIRDFY_ENABLED'     => ['type' => 'int',   'min' => 0,    'max' => 1],
     'BIRDFY_EMAIL'       => ['type' => 'secret_text', 'maxlen' => 180],
     'BIRDFY_PASSWORD'    => ['type' => 'secret_text', 'maxlen' => 220],
@@ -121,6 +123,19 @@ function safe_secret_text_value(string $v): bool {
     return $v === '' || (bool)preg_match('/^[\x20-\x7E]+$/', $v);
 }
 
+function normalize_ebird_region(string $v): string {
+    $v = strtoupper(trim($v));
+    if ($v === '') return '';
+    // Friendly US state shorthand: "MO" -> "US-MO". Full eBird region
+    // codes such as US-MO or US-MO-189 pass through unchanged.
+    if (preg_match('/^[A-Z]{2}$/', $v)) return 'US-' . $v;
+    return $v;
+}
+
+function safe_region_value(string $v): bool {
+    return $v === '' || (bool)preg_match('/^[A-Z0-9]{2,3}(?:-[A-Z0-9]{2,4}){0,3}$/', $v);
+}
+
 function mask_secret(string $v): array {
     $v = trim($v);
     if ($v === '') return ['configured' => false, 'masked' => ''];
@@ -143,6 +158,8 @@ if ($method === 'GET') {
         'BIRDFY_PASSWORD' => '',
         'BIRDFY_IMPORT_WINDOW_HOURS' => '24',
         'AV_DISPLAY_REFRESH_SECONDS' => '30',
+        'GEMINI_API_KEY' => '',
+        'EBIRD_REGION' => '',
     ];
     $out = [];
     foreach ($ALLOWED as $k => $spec) {
@@ -196,6 +213,10 @@ if ($method === 'POST') {
             if (strlen($v) > ($spec['maxlen'] ?? 200)) { $errors[$k] = 'too long'; continue; }
             if ($spec['type'] === 'secret' && !safe_secret_value($v)) { $errors[$k] = 'invalid characters'; continue; }
             if ($spec['type'] === 'secret_text' && !safe_secret_text_value($v)) { $errors[$k] = 'invalid characters'; continue; }
+        } elseif ($spec['type'] === 'region') {
+            $v = normalize_ebird_region((string)$v);
+            if (strlen($v) > ($spec['maxlen'] ?? 32)) { $errors[$k] = 'too long'; continue; }
+            if (!safe_region_value($v)) { $errors[$k] = 'invalid eBird region'; continue; }
         }
         $updates[$k] = $v;
     }

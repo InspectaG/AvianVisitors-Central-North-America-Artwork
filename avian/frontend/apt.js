@@ -2621,6 +2621,8 @@
               { v: 'purge', label: 'purge' },
             ])
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'used for nearby reports; never shown after save', v.EBIRD_API_KEY)
+          + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'used to generate missing bird artwork; never shown after save', v.GEMINI_API_KEY)
+          + settingsText('EBIRD_REGION', 'eBird region', 'US states can be entered as MO; saved as US-MO', v.EBIRD_REGION || '')
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'
@@ -2668,7 +2670,9 @@
     state = state || {};
     var configured = !!state.configured;
     var masked = state.masked || '';
-    var emptyPlaceholder = key === 'EBIRD_API_KEY' ? 'paste eBird API key' : 'enter value';
+    var emptyPlaceholder = key === 'EBIRD_API_KEY'
+      ? 'paste eBird API key'
+      : (key === 'GEMINI_API_KEY' ? 'paste Gemini API key' : 'enter value');
     return ''
       + '<div class="secret-row" data-secret-key="' + key + '">'
       + '  <div class="head">'
@@ -2680,6 +2684,19 @@
       + '  <div class="secret-control">'
       + '    <input type="password" autocomplete="off" spellcheck="false" placeholder="' + (configured ? 'enter a new value to replace' : emptyPlaceholder) + '" data-key="' + key + '">'
       + '    <button type="button" data-secret-clear="' + key + '">clear</button>'
+      + '  </div>'
+      + '</div>';
+  }
+  function settingsText(key, label, hint, val) {
+    return ''
+      + '<div class="secret-row text-row">'
+      + '  <div class="head">'
+      + '    <div class="label-block"><span class="label">' + label + '</span>'
+      +       (hint ? '<span class="hint">' + hint + '</span>' : '')
+      + '    </div>'
+      + '  </div>'
+      + '  <div class="secret-control">'
+      + '    <input type="text" autocomplete="off" spellcheck="false" placeholder="US-MO" value="' + attrEsc(val || '') + '" data-key="' + key + '">'
       + '  </div>'
       + '</div>';
   }
@@ -2731,7 +2748,7 @@
         setSaveState('change pending');
       });
     });
-    scope.querySelectorAll('.secret-control input').forEach(function (input) {
+    scope.querySelectorAll('.secret-control input[type="password"]').forEach(function (input) {
       input.addEventListener('input', function () {
         var v = input.value.trim();
         if (v) {
@@ -2741,6 +2758,12 @@
           delete pending[input.dataset.key];
           setSaveState(Object.keys(pending).length ? 'change pending' : '');
         }
+      });
+    });
+    scope.querySelectorAll('.text-row .secret-control input').forEach(function (input) {
+      input.addEventListener('input', function () {
+        pending[input.dataset.key] = input.value.trim();
+        setSaveState('change pending');
       });
     });
     scope.querySelectorAll('[data-secret-clear]').forEach(function (btn) {
@@ -3401,6 +3424,8 @@
               { v: 'purge', label: 'purge' },
             ])
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'used for nearby reports; never shown after save', v.EBIRD_API_KEY)
+          + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'used to generate missing bird artwork; never shown after save', v.GEMINI_API_KEY)
+          + settingsText('EBIRD_REGION', 'eBird region', 'US states can be entered as MO; saved as US-MO', v.EBIRD_REGION || '')
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'
@@ -3631,7 +3656,7 @@
         credentials: 'same-origin',
         cache: 'no-store',
       })
-        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
         .then(function (res) {
           if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'preview failed');
           currentSummary = res.j.summary || {};
@@ -3668,7 +3693,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hours: hours, confirm: 'DELETE' }),
       })
-        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
         .then(function (res) {
           if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'delete failed');
           var d = res.j.deleted || {};
@@ -3919,6 +3944,89 @@
     loadStatus();
   }
 
+  function renderArtworkStatus(j) {
+    if (!j) return '<div class="purge-loading">loading artwork status...</div>';
+    if (!j.ok && j.error) {
+      return '<div class="out err">' + adminEsc(j.error) + '</div>';
+    }
+    var configured = j.configured || {};
+    var job = j.job || {};
+    var running = job.running ? 'running' : 'idle';
+    var region = j.region || j.region_code || '-';
+    if (j.missing_species != null) {
+      var rows = (j.missing || []).slice(0, 12).map(function (r) {
+        return '<li><strong>' + adminEsc(r.com || r.sci) + '</strong><span>' + adminEsc(r.sci || '') + ' · pose ' + adminEsc((r.missing_poses || []).join(', ')) + '</span></li>';
+      }).join('');
+      return ''
+        + '<div class="birdfy-status">'
+        + '  <div><strong>' + adminEsc(region) + '</strong><span>region</span></div>'
+        + '  <div><strong>' + adminEsc(j.missing_species) + '</strong><span>species missing</span></div>'
+        + '  <div><strong>' + adminEsc(j.missing_images) + '</strong><span>images needed</span></div>'
+        + '</div>'
+        + (rows ? '<ul class="artwork-missing-list">' + rows + '</ul>' : '<div class="out ok">No missing regional artwork found.</div>')
+        + (j.truncated ? '<div class="birdfy-note">showing first 80 missing species; generator will process the full list</div>' : '');
+    }
+    var cfgLabel = [
+      configured.ebird_key ? 'eBird key set' : 'eBird key missing',
+      configured.gemini_key ? 'Gemini key set' : 'Gemini key missing',
+      configured.region ? 'region set' : 'region missing',
+    ].join(' · ');
+    var log = job.log_tail ? '<pre class="artwork-log">' + adminEsc(job.log_tail) + '</pre>' : '';
+    return ''
+      + '<div class="birdfy-status">'
+      + '  <div><strong>' + adminEsc(region) + '</strong><span>region</span></div>'
+      + '  <div><strong>' + adminEsc(running) + '</strong><span>generator</span></div>'
+      + '  <div><strong>' + adminEsc(configured.gemini_key ? 'ready' : 'missing') + '</strong><span>Gemini</span></div>'
+      + '</div>'
+      + '<div class="birdfy-note">' + adminEsc(cfgLabel) + '</div>'
+      + log;
+  }
+
+  function wireArtworkTool() {
+    var card = document.getElementById('artworkTool');
+    if (!card) return;
+    var out = card.querySelector('#artworkOut');
+    var preview = card.querySelector('#artworkPreview');
+    var generate = card.querySelector('#artworkGenerate');
+    function setBusy(on) {
+      if (preview) preview.disabled = !!on;
+      if (generate) generate.disabled = !!on;
+    }
+    function request(action, opts) {
+      setBusy(true);
+      if (out) out.innerHTML = '<div class="purge-loading">' + (action === 'generate' ? 'starting Gemini artwork job...' : 'checking regional artwork...') + '</div>';
+      return fetch(apiUrl('artwork-api.php?action=' + action), Object.assign({
+        credentials: 'same-origin',
+        cache: 'no-store',
+      }, opts || {}))
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+        .then(function (res) {
+          var j = res.j || {};
+          if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + (res.status || 'error')));
+          if (out) out.innerHTML = renderArtworkStatus(j.preview || j)
+            + (j.started ? '<div class="out ok">Gemini artwork generation started.</div>' : '')
+            + (j.message ? '<div class="birdfy-note">' + adminEsc(j.message) + '</div>' : '');
+          if (j.started) setTimeout(loadStatus, 1600);
+        })
+        .catch(function (e) { if (out) out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'artwork request failed') + '</div>'; })
+        .finally(function () { setBusy(false); });
+    }
+    function loadStatus() {
+      setBusy(true);
+      fetch(apiUrl('artwork-api.php?action=status'), { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (j) { if (out) out.innerHTML = renderArtworkStatus(j); })
+        .catch(function (e) { if (out) out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'artwork status failed') + '</div>'; })
+        .finally(function () { setBusy(false); });
+    }
+    if (preview) preview.addEventListener('click', function () { request('preview'); });
+    if (generate) generate.addEventListener('click', function () {
+      if (!confirm('Start Gemini artwork generation for missing regional birds?')) return;
+      request('generate', { method: 'POST' });
+    });
+    loadStatus();
+  }
+
   function fmtDb(v) {
     return v == null || !isFinite(+v) ? '-' : (+v).toFixed(1) + ' dBFS';
   }
@@ -4144,6 +4252,16 @@
       + '</div>'
       + '<div id="birdfyOut" class="eval-out"><div class="purge-loading">loading Birdfy status...</div></div>'
       + '</div>';
+    html += '<div class="admin-action artwork-tool" id="artworkTool">'
+      + '<h4>missing regional artwork</h4>'
+      + '<p>Finds eBird-region birds that are in the BirdNET model but do not have local illustrations, then starts the existing Gemini artwork generator.</p>'
+      + '<div class="purge-controls eval-controls">'
+      + '  <label>artwork</label>'
+      + '  <button id="artworkPreview" type="button">preview</button>'
+      + '  <button id="artworkGenerate" type="button">generate</button>'
+      + '</div>'
+      + '<div id="artworkOut" class="eval-out"><div class="purge-loading">loading artwork status...</div></div>'
+      + '</div>';
     html += '</div>';
     html += '<h2 class="admin-section-head">heal / update</h2>';
     html += '<div class="admin-actions-grid">';
@@ -4174,6 +4292,7 @@
     wireMicEvalTool();
     wireFilterEvalTool();
     wireBirdfyTool();
+    wireArtworkTool();
     // Wire restart buttons + copy buttons.
     adminBody.querySelectorAll('.admin-action button.run').forEach(function (b) {
       b.addEventListener('click', function () {
