@@ -104,6 +104,28 @@ function read_temp(): ?float {
     return $raw === '' ? null : round((int)$raw / 1000, 1);
 }
 
+function read_cpu_totals(): ?array {
+    $raw = @file_get_contents('/proc/stat');
+    if (!$raw || !preg_match('/^cpu\s+(.+)$/m', $raw, $m)) return null;
+    $parts = array_map('intval', preg_split('/\s+/', trim($m[1])) ?: []);
+    if (count($parts) < 4) return null;
+    $idle = ($parts[3] ?? 0) + ($parts[4] ?? 0);
+    $total = array_sum($parts);
+    return ['idle' => $idle, 'total' => $total];
+}
+
+function read_cpu_usage(): ?float {
+    $a = read_cpu_totals();
+    if (!$a) return null;
+    usleep(120000);
+    $b = read_cpu_totals();
+    if (!$b) return null;
+    $total = $b['total'] - $a['total'];
+    $idle = $b['idle'] - $a['idle'];
+    if ($total <= 0) return null;
+    return round(max(0, min(100, (1 - ($idle / $total)) * 100)), 1);
+}
+
 function read_audio(): array {
     // Read /proc/asound/cards directly - works even when the capture
     // device is busy (arecord -l would fail with "no soundcards" if
@@ -504,6 +526,7 @@ switch ($action) {
             'disk_root'   => read_disk('/'),
             'disk_birds'  => read_disk($BIRDSONGS_DIR),
             'temp_c'      => read_temp(),
+            'cpu_pct'     => read_cpu_usage(),
             'audio'       => read_audio(),
             'stream_data' => read_streamdata($STREAM_DIR),
             'birds_db'    => read_db_age($DB_PATH),
@@ -605,6 +628,7 @@ switch ($action) {
                 'disk_root'   => read_disk('/'),
                 'disk_birds'  => read_disk($BIRDSONGS_DIR),
                 'temp_c'      => read_temp(),
+                'cpu_pct'     => read_cpu_usage(),
                 'audio'       => read_audio(),
                 'stream_data' => read_streamdata($STREAM_DIR),
                 'birds_db'    => read_db_age($DB_PATH),

@@ -3487,6 +3487,10 @@
       sys.temp_c != null ? sys.temp_c.toFixed(1) + '°C' : '-',
       sys.hostname + ' · ' + sys.kernel,
       sys.temp_c != null && sys.temp_c > 75 ? 'warn' : '');
+    html += adminCard('cpu usage',
+      sys.cpu_pct != null ? (+sys.cpu_pct).toFixed(1) + '%' : '-',
+      'current processor load',
+      sys.cpu_pct != null && +sys.cpu_pct > 85 ? 'warn' : '');
     html += adminCard('memory used', sys.mem ? sys.mem.used_pct + '%' : '-',
       sys.mem ? adminFmtBytes(sys.mem.used_bytes) + ' / ' + adminFmtBytes(sys.mem.total_bytes) : '',
       sys.mem && sys.mem.used_pct > 92 ? 'warn' : '');
