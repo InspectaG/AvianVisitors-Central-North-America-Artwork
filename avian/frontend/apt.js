@@ -1124,6 +1124,7 @@
     stats: null,        // ./avian/api/birdnet-api.php?action=stats (totals/today/week/last_hour/started)
     lifelist: null,     // ./avian/api/birdnet-api.php?action=lifelist (every species ever detected)
     timeseries: null,   // ./avian/api/birdnet-api.php?action=timeseries (daily + hourly aggregates)
+    seasonality: null,  // ./avian/api/birdnet-api.php?action=seasonality (weekly migration calendar)
     firstseen: null,    // ./avian/api/birdnet-api.php?action=firstseen (newest lifelist additions)
     seasonfirst: null,  // ./avian/api/birdnet-api.php?action=seasonfirst (first detections since Jan 1)
     recent: null,       // ./avian/api/birdnet-api.php?action=recent&hours=N (refetched on picker change)
@@ -1262,6 +1263,21 @@
   function fetchJson(url) {
     return fetch(url, { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+  }
+
+  var SLOW_DATA_TTL_MS = 5 * 60 * 1000;
+  var EBIRD_NEARBY_TTL_MS = 60 * 60 * 1000;
+  var slowDataFetchedAt = {};
+  function fetchCachedData(key, url, ttlMs) {
+    var cached = DATA[key];
+    var fetchedAt = slowDataFetchedAt[key] || 0;
+    if (cached && (Date.now() - fetchedAt) < ttlMs) {
+      return Promise.resolve(cached);
+    }
+    return fetchJson(url).then(function (j) {
+      slowDataFetchedAt[key] = Date.now();
+      return j;
+    });
   }
 
   function backfillDaily(daily, days) {
@@ -1437,6 +1453,99 @@
       + '</section>';
   }
 
+  function weekOfYearIndex(d) {
+    var start = new Date(d.getFullYear(), 0, 1);
+    var day = Math.floor((d - start) / 86400000);
+    return Math.max(0, Math.min(51, Math.floor(day / 7)));
+  }
+  function monthWeekPct(monthIndex) {
+    var d = new Date(new Date().getFullYear(), monthIndex, 1);
+    return (weekOfYearIndex(d) / 52) * 100;
+  }
+  function seasonWeekLabel(idx) {
+    var d = new Date(new Date().getFullYear(), 0, 1 + idx * 7);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  function renderSeasonalityCalendar() {
+    var data = DATA.seasonality;
+    var rows = (data && data.species) || [];
+    if (!data) {
+      return '<div class="stats-season-empty">loading migration calendar...</div>';
+    }
+    if (!rows.length) {
+      return '<div class="stats-season-empty">no seasonality data yet</div>';
+    }
+    var maxPeak = rows.reduce(function (m, s) { return Math.max(m, +s.peak_count || 0); }, 1);
+    var totalSpecies = rows.length;
+    var totalCalls = +(data.total_detections || 0);
+    var todayPct = ((weekOfYearIndex(new Date()) + 0.5) / 52) * 100;
+    var months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    var monthHtml = months.map(function (m, i) {
+      return '<span class="stats-season-month" style="left:' + monthWeekPct(i).toFixed(2) + '%">' + m + '</span>';
+    }).join('');
+    var rowHtml = rows.slice(0, 42).map(function (s) {
+      var weeks = (s.weeks || []).slice(0, 52);
+      while (weeks.length < 52) weeks.push(0);
+      var peak = Math.max(1, +s.peak_count || 1);
+      var cells = weeks.map(function (n) {
+        var level = n <= 0 ? 0 : Math.max(1, Math.min(5, Math.ceil((+n / peak) * 5)));
+        return '<i class="stats-season-cell" data-v="' + level + '" title="' + fmtN(+n || 0) + ' detections"></i>';
+      }).join('');
+      var arrival = s.arrival_week == null ? '' : '<i class="stats-season-arrival" title="arrival around ' + seasonWeekLabel(+s.arrival_week) + '" style="left:' + (((+s.arrival_week + 0.5) / 52) * 100).toFixed(2) + '%"></i>';
+      var departure = s.departure_week == null ? '' : '<i class="stats-season-departure" title="departure around ' + seasonWeekLabel(+s.departure_week) + '" style="left:' + (((+s.departure_week + 0.5) / 52) * 100).toFixed(2) + '%"></i>';
+      var img = apiUrl('cutout.php?sci=' + encodeURIComponent(s.sci)) + (s.com ? '&com=' + encodeURIComponent(s.com) : '') + '&v=' + IMG_VERSION;
+      return ''
+        + '<div class="stats-season-row" data-sci="' + s.sci + '">'
+        +   '<div class="stats-season-bird">'
+        +     '<img loading="lazy" decoding="async" src="' + img + '" alt="">'
+        +     '<span><strong>' + (s.com || s.sci) + '</strong><em>' + s.sci + '</em></span>'
+        +   '</div>'
+        +   '<div class="stats-season-heat">'
+        +     cells + arrival + departure
+        +     '<i class="stats-season-current" style="left:' + todayPct.toFixed(2) + '%"></i>'
+        +   '</div>'
+        +   '<div class="stats-season-count"><strong>' + fmtN(+s.total || 0) + '</strong><span>calls</span></div>'
+        + '</div>';
+    }).join('');
+    var cap = rows.length > 42 ? '<span>' + fmtN(42) + ' shown of ' + fmtN(rows.length) + '</span>' : '<span>' + fmtN(totalSpecies) + ' species</span>';
+    var topHtml = ''
+      + '<div class="stats-season-top">'
+      +   '<div>'
+      +     '<h3>Migration Calendar</h3>'
+      +     '<small>weekly local detections across the calendar year</small>'
+      +   '</div>'
+      +   '<div class="stats-season-summary">'
+      +     '<strong>' + fmtN(totalSpecies) + '</strong><span>species</span>'
+      +     '<strong>' + fmtN(totalCalls) + '</strong><span>calls</span>'
+      +   '</div>'
+      + '</div>';
+    var cardHtml = ''
+      + '<div class="stats-season-card">'
+      +   '<div class="stats-season-head">'
+      +     '<div>species</div>'
+      +     '<div class="stats-season-axis">' + monthHtml + '</div>'
+      +     '<div>total</div>'
+      +   '</div>'
+      +   '<div class="stats-season-scroll">' + rowHtml + '</div>'
+      + '</div>';
+    var legendHtml = ''
+      + '<div class="stats-season-legend">'
+      +   '<span><i class="arr"></i>arrival window</span>'
+      +   '<span><i class="dep"></i>departure window</span>'
+      +   '<span><i class="now"></i>today</span>'
+      +   '<span><i class="heat"></i>weekly density</span>'
+      +   cap
+      + '</div>';
+    return ''
+      + '<section class="stats-season-panel">'
+      +   '<div class="stats-season-inline">'
+      +     topHtml
+      +     cardHtml
+      +     legendHtml
+      +   '</div>'
+      + '</section>';
+  }
+
   function ensureStatsClockZoomModal() {
     var existing = document.getElementById('stats-clock-zoom-modal');
     if (existing) return existing;
@@ -1486,34 +1595,7 @@
     tl.classList.remove('is-mobile');
     tl.classList.remove('is-recent-list');
     tl.classList.add('is-recent-list');
-    var sorted = rows.slice().sort(function (a, b) {
-      return (parseSiteTs(b.last_seen) || 0) - (parseSiteTs(a.last_seen) || 0);
-    });
-    var listHtml = sorted.slice(0, statsRecentLimit()).map(function (s) {
-      var n = +s.n || 0;
-      return ''
-        + '<div class="stats-recent-row" data-sci="' + s.sci + '">'
-        +   '<div class="stats-recent-name">'
-        +     '<span class="com">' + (s.com || s.sci) + '</span>'
-        +     '<span class="time">' + fmtStatsDateTime(s.last_seen) + '</span>'
-        +   '</div>'
-        +   '<div class="stats-recent-count">'
-        +     '<span class="n">' + fmtN(n) + '</span>'
-        +     '<span class="lbl">' + callLabel(n) + '</span>'
-        +   '</div>'
-        + '</div>';
-    }).join('');
-
-    tl.innerHTML = ''
-      + '<div class="stats-recent-panel">'
-      +   renderStatsActivityClock()
-      +   '<div class="stats-recent-head">'
-      +     '<h3>Recent Calls</h3>'
-      +     '<small>newest first, with ' + windowTotalLabel(currentHours) + ' total</small>'
-      +   '</div>'
-      +   '<div class="stats-recent-list">' + listHtml + '</div>'
-      +   renderNightVisitorsPanel()
-      + '</div>';
+    tl.innerHTML = renderSeasonalityCalendar();
   }
 
   // Editorial detection timeline. One column per species; the black
@@ -1540,11 +1622,6 @@
 
     var now = Date.now();
     tl.classList.remove('is-mobile');
-
-    if (!all.length) {
-      tl.innerHTML = '<div class="stats-tl-empty">no detections in this window</div>';
-      return;
-    }
 
     // Cap species count so labels don't pile up. Same rule as before -
     // ~28 px per visible mark - but applied to the count of marks, not
@@ -1783,7 +1860,7 @@
     function setHi(sci, on) {
       if (!sci) return;
       var esc = sci.replace(/"/g, '\"');
-      v1.querySelectorAll('.stats-tl-col[data-sci="' + esc + '"], .stats-tl-mobile-row[data-sci="' + esc + '"], .stats-recent-row[data-sci="' + esc + '"], .stats-overnight-row[data-sci="' + esc + '"], .stats-side li[data-sci="' + esc + '"]')
+      v1.querySelectorAll('.stats-tl-col[data-sci="' + esc + '"], .stats-tl-mobile-row[data-sci="' + esc + '"], .stats-recent-row[data-sci="' + esc + '"], .stats-overnight-row[data-sci="' + esc + '"], .stats-season-row[data-sci="' + esc + '"], .stats-side li[data-sci="' + esc + '"]')
         .forEach(function (el) { el.classList.toggle('sync-hi', on); });
     }
     v1.addEventListener('mouseover', function (ev) {
@@ -2161,7 +2238,7 @@
       .catch(function (e) { console.warn('recent fetch failed', e); });
   }
   function refreshEbirdNearby() {
-    return fetchJson(apiUrl('birdnet-api.php?action=ebird_nearby&dist=25&back=14'))
+    return fetchCachedData('ebirdNearby', apiUrl('birdnet-api.php?action=ebird_nearby&dist=25&back=14'), EBIRD_NEARBY_TTL_MS)
       .then(function (j) {
         DATA.ebirdNearby = j;
         renderAtlas();
@@ -2176,10 +2253,11 @@
     var nightCollageHours = 168;
     return Promise.all([
       fetchJson(apiUrl('birdnet-api.php?action=stats')).catch(function () { return null; }),
-      fetchJson(apiUrl('birdnet-api.php?action=lifelist')).catch(function () { return null; }),
-      fetchJson(apiUrl('birdnet-api.php?action=timeseries&days=30')).catch(function () { return null; }),
-      fetchJson(apiUrl('birdnet-api.php?action=firstseen&limit=10')).catch(function () { return null; }),
-      fetchJson(apiUrl('birdnet-api.php?action=seasonfirst&limit=100')).catch(function () { return null; }),
+      fetchCachedData('lifelist', apiUrl('birdnet-api.php?action=lifelist'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
+      fetchCachedData('timeseries', apiUrl('birdnet-api.php?action=timeseries&days=30'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
+      fetchCachedData('seasonality', apiUrl('birdnet-api.php?action=seasonality&limit=80'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
+      fetchCachedData('firstseen', apiUrl('birdnet-api.php?action=firstseen&limit=10'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
+      fetchCachedData('seasonfirst', apiUrl('birdnet-api.php?action=seasonfirst&limit=100'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
       fetchJson(apiUrl('birdnet-api.php?action=recent&hours=' + forHours)).catch(function () { return null; }),
       fetchJson(nightApiUrl(forHours, 6)).catch(function () { return null; }),
       fetchJson(nightApiUrl(nightCollageHours, 6)).catch(function () { return null; }),
@@ -2188,15 +2266,16 @@
       DATA.stats = parts[0];
       DATA.lifelist = parts[1];
       DATA.timeseries = parts[2];
-      DATA.firstseen = parts[3];
-      DATA.seasonfirst = parts[4];
+      DATA.seasonality = parts[3];
+      DATA.firstseen = parts[4];
+      DATA.seasonfirst = parts[5];
       // Only accept the recent slice if the window hasn't changed
       // since this poll started - otherwise keep what's there.
-      if (forHours === currentHours && parts[5]) DATA.recent = parts[5];
-      applyNightWindowFromResponse(parts[6] || parts[7]);
-      if (forHours === currentHours) DATA.overnight = parts[6] || { species: [], hours: forHours, as_of: Date.now(), error: true };
-      DATA.nightCollage = parts[7] || DATA.overnight;
-      if (forHours === currentHours) DATA.visual = parts[8] || DATA.visual;
+      if (forHours === currentHours && parts[6]) DATA.recent = parts[6];
+      applyNightWindowFromResponse(parts[7] || parts[8]);
+      if (forHours === currentHours) DATA.overnight = parts[7] || { species: [], hours: forHours, as_of: Date.now(), error: true };
+      DATA.nightCollage = parts[8] || DATA.overnight;
+      if (forHours === currentHours) DATA.visual = parts[9] || DATA.visual;
       recomputeDerived();
       renderTimeIndependent();
       renderCollageFromData();
@@ -2208,25 +2287,41 @@
   // populates; until then the page sits with empty histograms + lists.
   refreshAll();
 
+  function setDisplayRefreshSeconds(seconds) {
+    var n = Math.max(5, Math.min(300, Math.round(+seconds || 30)));
+    pollMs = n * 1000;
+    if (pollTimer && !document.hidden) startPolling();
+  }
+
+  function loadDisplayRefreshSetting() {
+    fetch(apiUrl('config.php'), { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (cfg) {
+        var v = cfg.values || {};
+        setDisplayRefreshSeconds(v.AV_DISPLAY_REFRESH_SECONDS || 30);
+      })
+      .catch(function () {});
+  }
+
   // Hook into the window picker so the data refetches on change.
   winBtns.forEach(function (b) {
     b.addEventListener('click', function () { refreshRecent(); });
   });
 
   // ---- Realtime polling ----
-  // Every POLL_MS the page refetches the live data set so the collage,
+  // Every pollMs the page refetches the live data set so the collage,
   // stats, and atlas reflect new detections without a manual reload.
   // We use refreshAll() (cheap: 5 small JSON fetches) so the dependent
   // text/charts update too. Polling pauses when the tab is hidden and
   // resumes (with an immediate fetch) when it becomes visible again.
-  var POLL_MS = 30 * 1000;
+  var pollMs = 30 * 1000;
   var pollTimer = null;
   function startPolling() {
     stopPolling();
     pollTimer = setInterval(function () {
       if (document.hidden) return;
       refreshAll();
-    }, POLL_MS);
+    }, pollMs);
   }
   function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
   document.addEventListener('visibilitychange', function () {
@@ -2239,6 +2334,7 @@
       startPolling();
     }
   });
+  loadDisplayRefreshSetting();
   startPolling();
 
   // ---- Menu dropdown ----
@@ -2517,6 +2613,7 @@
           + settingsSecret('BIRDFY_EMAIL', 'Birdfy email', 'stored locally; never shown after save', v.BIRDFY_EMAIL)
           + settingsSecret('BIRDFY_PASSWORD', 'Birdfy password', 'stored locally; never shown after save', v.BIRDFY_PASSWORD)
           + settingsSlider('BIRDFY_IMPORT_WINDOW_HOURS', 'Birdfy import window', 'hours of camera detections to check', v.BIRDFY_IMPORT_WINDOW_HOURS || 24, 1, 168, 1, 0)
+          + settingsSlider('AV_DISPLAY_REFRESH_SECONDS', 'Display refresh', 'seconds between automatic UI updates', v.AV_DISPLAY_REFRESH_SECONDS || 30, 5, 300, 5, 0)
           + settingsHourSelect('AV_NIGHT_START', 'Night starts', 'used by moon reveal and Night Visitors', v.AV_NIGHT_START)
           + settingsHourSelect('AV_NIGHT_END',   'Night ends',   'calls before this hour count as night', v.AV_NIGHT_END)
           + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
@@ -2676,8 +2773,10 @@
   function saveSettings() {
     if (Object.keys(pending).length === 0) return;
     var nightChanged = Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_START') || Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_END');
+    var refreshChanged = Object.prototype.hasOwnProperty.call(pending, 'AV_DISPLAY_REFRESH_SECONDS');
     var nextNightStart = Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_START') ? pending.AV_NIGHT_START : nightStartHour;
     var nextNightEnd = Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_END') ? pending.AV_NIGHT_END : nightEndHour;
+    var nextRefreshSeconds = refreshChanged ? pending.AV_DISPLAY_REFRESH_SECONDS : null;
     var body = JSON.stringify(pending);
     setSaveState('saving...');
     fetch(apiUrl('config.php'), {
@@ -2694,6 +2793,7 @@
             DATA.nightCollage = null;
             refreshRecent();
           }
+          if (refreshChanged) setDisplayRefreshSeconds(nextRefreshSeconds);
           pending = {};
           setSaveState('saved ✓', 'ok');
           if (document.body.classList.contains('admin-on') && adminSect === 'settings') {
@@ -3293,6 +3393,7 @@
           + settingsSecret('BIRDFY_EMAIL', 'Birdfy email', 'stored locally; never shown after save', v.BIRDFY_EMAIL)
           + settingsSecret('BIRDFY_PASSWORD', 'Birdfy password', 'stored locally; never shown after save', v.BIRDFY_PASSWORD)
           + settingsSlider('BIRDFY_IMPORT_WINDOW_HOURS', 'Birdfy import window', 'hours of camera detections to check', v.BIRDFY_IMPORT_WINDOW_HOURS || 24, 1, 168, 1, 0)
+          + settingsSlider('AV_DISPLAY_REFRESH_SECONDS', 'Display refresh', 'seconds between automatic UI updates', v.AV_DISPLAY_REFRESH_SECONDS || 30, 5, 300, 5, 0)
           + settingsHourSelect('AV_NIGHT_START', 'Night starts', 'used by moon reveal and Night Visitors', v.AV_NIGHT_START)
           + settingsHourSelect('AV_NIGHT_END',   'Night ends',   'calls before this hour count as night', v.AV_NIGHT_END)
           + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
@@ -3647,6 +3748,60 @@
       + '</div>';
   }
 
+  function defaultMicEvalChangedAt() {
+    var d = new Date(Date.now() - 24 * 3600000);
+    d.setMinutes(Math.floor(d.getMinutes() / 5) * 5, 0, 0);
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function evalRate(v) {
+    return v == null || !isFinite(+v) ? '-' : (+v).toFixed(+v >= 10 ? 1 : 2) + '/hr';
+  }
+
+  function evalRateDelta(v) {
+    if (v == null || !isFinite(+v)) return '<span class="eval-delta">-</span>';
+    var n = +v;
+    var cls = n > 0 ? 'up' : (n < 0 ? 'down' : 'flat');
+    var sign = n > 0 ? '+' : '';
+    return '<span class="eval-delta ' + cls + '">' + adminEsc(sign + evalRate(n)) + '</span>';
+  }
+
+  function renderMicEval(j) {
+    var before = j.before || {}, after = j.after || {}, delta = j.delta || {};
+    var verdict = j.verdict || { label: 'unknown', tone: 'neutral', explain: '' };
+    var windows = j.windows || {};
+    var beforeWindow = windows.before || {};
+    var afterWindow = windows.after || {};
+    return ''
+      + '<div class="eval-verdict ' + adminEsc(verdict.tone || 'neutral') + '">'
+      + '  <strong>' + adminEsc(verdict.label || 'unknown') + '</strong>'
+      + '  <span>' + adminEsc(verdict.explain || '') + '</span>'
+      + '</div>'
+      + '<div class="eval-settings">'
+      + (j.label ? '  <span>upgrade ' + adminEsc(j.label) + '</span>' : '')
+      + '  <span>changed ' + adminEsc((j.changed_at || '').replace('T', ' ') || '-') + '</span>'
+      + '  <span>before ' + adminEsc(beforeWindow.start || '-') + ' to ' + adminEsc(beforeWindow.end || '-') + '</span>'
+      + '  <span>after ' + adminEsc(afterWindow.start || '-') + ' to ' + adminEsc(afterWindow.end || '-') + '</span>'
+      + '</div>'
+      + '<div class="eval-metrics">'
+      + evalMetric('detections / hour', evalRate(before.detections_per_hour), evalRate(after.detections_per_hour), evalRateDelta(delta.detections_per_hour))
+      + evalMetric('avg confidence', evalConf(before.avg_conf), evalConf(after.avg_conf), evalDelta(delta.avg_conf, false))
+      + evalMetric('high-confidence rate', evalPct(before.high_rate), evalPct(after.high_rate), evalDelta(delta.high_rate, true))
+      + evalMetric('species count', adminEsc(before.species || 0), adminEsc(after.species || 0), '<span class="eval-delta ' + ((delta.species || 0) > 0 ? 'up' : ((delta.species || 0) < 0 ? 'down' : 'flat')) + '">' + adminEsc(((delta.species || 0) > 0 ? '+' : '') + (delta.species || 0)) + '</span>')
+      + '</div>'
+      + '<div class="eval-counts">'
+      + '  <div><strong>' + adminEsc(before.detections || 0) + '</strong><span>baseline detections</span></div>'
+      + '  <div><strong>' + adminEsc(after.detections || 0) + '</strong><span>upgrade detections</span></div>'
+      + '  <div><strong>' + adminEsc((delta.score == null ? '-' : delta.score)) + '</strong><span>score</span></div>'
+      + '</div>'
+      + '<div class="eval-species">'
+      + '  <div><h5>new after upgrade</h5>' + evalSpeciesList((j.species || {}).gained) + '</div>'
+      + '  <div><h5>missing after upgrade</h5>' + evalSpeciesList((j.species || {}).lost) + '</div>'
+      + '</div>';
+  }
+
   function evalMetric(label, before, after, deltaHtml) {
     return '<div class="eval-metric">'
       + '<span>' + adminEsc(label) + '</span>'
@@ -3673,6 +3828,36 @@
         .catch(function (e) { out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'evaluation failed') + '</div>'; })
         .finally(function () { if (btn) btn.disabled = false; });
     }
+    if (range) range.addEventListener('change', loadEval);
+    if (btn) btn.addEventListener('click', loadEval);
+    loadEval();
+  }
+
+  function wireMicEvalTool() {
+    var card = document.getElementById('micEvalTool');
+    if (!card) return;
+    var label = card.querySelector('#micEvalLabel');
+    var changed = card.querySelector('#micEvalChangedAt');
+    var range = card.querySelector('#micEvalRange');
+    var btn = card.querySelector('#micEvalRefresh');
+    var out = card.querySelector('#micEvalOut');
+    if (changed && !changed.value) changed.value = defaultMicEvalChangedAt();
+    function loadEval() {
+      var hours = +(range && range.value) || 24;
+      var changedAt = changed && changed.value ? changed.value : defaultMicEvalChangedAt();
+      var labelText = label && label.value ? label.value : '';
+      out.innerHTML = '<div class="purge-loading">evaluating hardware change...</div>';
+      if (btn) btn.disabled = true;
+      fetch(apiUrl('birdnet-api.php?action=mic_eval&hours=' + encodeURIComponent(hours) + '&changed_at=' + encodeURIComponent(changedAt) + '&label=' + encodeURIComponent(labelText)), {
+        credentials: 'same-origin', cache: 'no-store',
+      })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (j) { out.innerHTML = renderMicEval(j); })
+        .catch(function (e) { out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'evaluation failed') + '</div>'; })
+        .finally(function () { if (btn) btn.disabled = false; });
+    }
+    if (label) label.addEventListener('change', loadEval);
+    if (changed) changed.addEventListener('change', loadEval);
     if (range) range.addEventListener('change', loadEval);
     if (btn) btn.addEventListener('click', loadEval);
     loadEval();
@@ -3907,6 +4092,32 @@
       + '</div>'
       + '<div id="micHealthOut" class="eval-out"><div class="purge-loading">checking mic health...</div></div>'
       + '</div>';
+    html += '<div class="admin-action mic-eval" id="micEvalTool">'
+      + '<h4>mic upgrade evaluation</h4>'
+      + '<p>Compares detections before and after a microphone, sound-card, gain, or dish change.</p>'
+      + '<div class="purge-controls eval-controls eval-controls-wide">'
+      + '  <label for="micEvalLabel">upgrade</label>'
+      + '  <input id="micEvalLabel" type="text" maxlength="80" autocomplete="off" spellcheck="true" placeholder="Andrea USB-SA + parabolic dish">'
+      + '  <button id="micEvalRefresh" type="button">refresh</button>'
+      + '</div>'
+      + '<div class="purge-controls eval-controls eval-controls-wide">'
+      + '  <label for="micEvalChangedAt">changed</label>'
+      + '  <input id="micEvalChangedAt" type="datetime-local">'
+      + '  <span></span>'
+      + '</div>'
+      + '<div class="purge-controls eval-controls">'
+      + '  <label for="micEvalRange">range</label>'
+      + '  <select id="micEvalRange">'
+      + '    <option value="6">6 hours</option>'
+      + '    <option value="12">12 hours</option>'
+      + '    <option value="24" selected>24 hours</option>'
+      + '    <option value="48">48 hours</option>'
+      + '    <option value="168">7 days</option>'
+      + '    <option value="720">30 days</option>'
+      + '  </select>'
+      + '</div>'
+      + '<div id="micEvalOut" class="eval-out"><div class="purge-loading">loading evaluation...</div></div>'
+      + '</div>';
     html += '<div class="admin-action filter-eval" id="filterEvalTool">'
       + '<h4>audio filter evaluation</h4>'
       + '<p>Compares the recent window to the previous equal window using BirdNET confidence. Best used after changing filter settings.</p>'
@@ -3960,6 +4171,7 @@
     adminBody.innerHTML = html;
     wirePurgeTool();
     wireMicHealthTool();
+    wireMicEvalTool();
     wireFilterEvalTool();
     wireBirdfyTool();
     // Wire restart buttons + copy buttons.

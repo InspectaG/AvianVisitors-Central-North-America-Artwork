@@ -887,29 +887,33 @@
   }
 
   /* Page header is now shared at .stage > .static-head - see top of CSS. */
-  /* Stats grid: charts stack on the LEFT, text sections on the RIGHT.
-     Each chart is a full-bleed card; each text section is a list with
-     subtle separators. Sized to fit the viewport without scrolling. */
+  /* Stats grid: summary sections sit at the top; the migration calendar
+     sits below them as the full-width analytical view. */
   .stats-grid {
     flex: 0 1 auto; min-height: 0;
     --stats-grid-offset: clamp(42px, 6vh, 74px);
-    height: min(clamp(520px, 62vh, 700px), calc(100% - var(--stats-grid-offset)));
+    height: min(clamp(560px, 70vh, 760px), calc(100% - var(--stats-grid-offset)));
     max-height: calc(100% - var(--stats-grid-offset));
-    display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(340px, 0.98fr); gap: clamp(52px, 4.6vw, 74px);
-    max-width: 1040px; margin: var(--stats-grid-offset) auto 0; width: calc(100% - clamp(140px, 20vw, 320px));
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(280px, 1fr);
+    gap: clamp(24px, 3.2vh, 36px);
+    max-width: 1180px; margin: var(--stats-grid-offset) auto 0; width: calc(100% - clamp(80px, 12vw, 180px));
     align-items: stretch;
   }
+  .stats-side { order: 1; }
+  .stats-timeline { order: 2; }
   @media (min-width: 901px) and (min-height: 1000px) {
     .stats-grid {
       --stats-grid-offset: clamp(62px, 5.8vh, 80px);
-      height: min(clamp(600px, 68vh, 720px), calc(100% - var(--stats-grid-offset)));
+      height: min(clamp(640px, 72vh, 800px), calc(100% - var(--stats-grid-offset)));
       max-height: calc(100% - var(--stats-grid-offset));
     }
   }
   @media (min-width: 901px) and (max-height: 950px) {
     .stats-grid {
       --stats-grid-offset: clamp(34px, 6vh, 58px);
-      height: min(clamp(500px, 62vh, 660px), calc(100% - var(--stats-grid-offset)));
+      height: min(clamp(520px, 70vh, 690px), calc(100% - var(--stats-grid-offset)));
       max-height: calc(100% - var(--stats-grid-offset));
     }
   }
@@ -921,7 +925,7 @@
       height: auto;
       max-height: none;
       grid-template-columns: 1fr;
-      gap: 40px;
+      gap: 30px;
       margin: 0 auto;
       align-items: stretch;
     }
@@ -929,7 +933,7 @@
        against, so pin it to a usable height instead of letting it
        collapse to its (zero) intrinsic height. clamp() keeps it sane
        on both short landscape phones and tall portrait ones. */
-    .stats-timeline { height: clamp(260px, 44vh, 420px); }
+    .stats-timeline { height: clamp(320px, 52vh, 520px); }
   }
   /* Editorial detection timeline. One column per species. Black
      square positioned vertically by count (y = quantity), columns
@@ -1068,6 +1072,250 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+  .stats-season-panel {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .stats-season-inline {
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .stats-season-mobile-card,
+  .stats-season-modal {
+    display: none;
+  }
+  .stats-season-top {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 12px;
+  }
+  .stats-season-top h3 {
+    font: 700 12.5px ui-monospace, Menlo, monospace;
+    color: var(--ink);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0 0 1px;
+    border-left: 2px solid var(--accent);
+    padding-left: 10px;
+  }
+  .stats-season-top small {
+    display: block;
+    font: 10.75px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+    margin-left: 12px;
+  }
+  .stats-season-summary {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px 9px;
+    align-items: baseline;
+    padding-top: 1px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .stats-season-summary strong {
+    font: 700 19px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .stats-season-summary span {
+    font: 9.5px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+  }
+  .stats-season-card {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border-radius: 8px;
+    background: var(--paper-2);
+    box-shadow: var(--recess);
+  }
+  .stats-season-head,
+  .stats-season-row {
+    display: grid;
+    grid-template-columns: minmax(160px, 230px) minmax(620px, 1fr) minmax(58px, 82px);
+    min-width: 860px;
+  }
+  .stats-season-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    min-height: 38px;
+    background: color-mix(in srgb, var(--paper-2) 92%, white);
+    border-bottom: 1px solid rgba(26,22,18,0.10);
+  }
+  .stats-season-head > div {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font: 9.5px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+    border-right: 1px solid rgba(26,22,18,0.08);
+  }
+  .stats-season-axis {
+    position: relative;
+    padding: 0;
+  }
+  .stats-season-month {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .stats-season-row {
+    min-height: 52px;
+    border-bottom: 1px solid rgba(26,22,18,0.07);
+    cursor: pointer;
+    transition: background 140ms ease;
+  }
+  .stats-season-row:hover,
+  .stats-season-row.sync-hi {
+    background: rgba(255,255,255,0.52);
+  }
+  .stats-season-bird {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 9px;
+    align-items: center;
+    min-width: 0;
+    padding: 7px 10px;
+    border-right: 1px solid rgba(26,22,18,0.08);
+  }
+  .stats-season-bird img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    display: block;
+  }
+  .stats-season-bird span {
+    min-width: 0;
+    display: block;
+  }
+  .stats-season-bird strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 600 15.5px/1.05 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+  }
+  .stats-season-bird em {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+    font: italic 10.5px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink-soft);
+  }
+  .stats-season-heat {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(52, 1fr);
+    gap: 2px;
+    padding: 11px 10px;
+    background:
+      repeating-linear-gradient(90deg, transparent 0, transparent calc(8.333% - 1px), rgba(26,22,18,0.07) calc(8.333% - 1px), rgba(26,22,18,0.07) 8.333%);
+  }
+  .stats-season-cell {
+    align-self: center;
+    height: 25px;
+    border-radius: 3px;
+    background: rgba(63,127,85,0.06);
+  }
+  .stats-season-cell[data-v="1"] { background: rgba(63,127,85,0.18); }
+  .stats-season-cell[data-v="2"] { background: rgba(63,127,85,0.34); }
+  .stats-season-cell[data-v="3"] { background: rgba(63,127,85,0.54); }
+  .stats-season-cell[data-v="4"] { background: rgba(63,127,85,0.76); }
+  .stats-season-cell[data-v="5"] { background: rgba(63,127,85,0.95); }
+  .stats-season-arrival,
+  .stats-season-departure,
+  .stats-season-current {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  .stats-season-arrival { background: #b88912; }
+  .stats-season-departure { background: #6f4bb8; }
+  .stats-season-current {
+    width: 2px;
+    background: #2da963;
+    box-shadow: 0 0 0 2px rgba(45,169,99,0.12);
+  }
+  .stats-season-count {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-end;
+    padding: 0 11px;
+    border-left: 1px solid rgba(26,22,18,0.08);
+    white-space: nowrap;
+  }
+  .stats-season-count strong {
+    font: 700 14px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .stats-season-count span {
+    margin-top: 2px;
+    font: 8.75px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+  }
+  .stats-season-legend {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 9px;
+    font: 9px/1.25 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.05em;
+    text-transform: lowercase;
+  }
+  .stats-season-legend i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    margin-right: 4px;
+    vertical-align: -1px;
+  }
+  .stats-season-legend .arr { background: #b88912; }
+  .stats-season-legend .dep { background: #6f4bb8; }
+  .stats-season-legend .now { background: #2da963; width: 2px; border-radius: 1px; }
+  .stats-season-legend .heat {
+    width: 28px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(63,127,85,0.12), rgba(63,127,85,0.95));
+  }
+  .stats-season-empty {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 11px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.16em;
+    text-transform: lowercase;
   }
   .stats-clock-panel {
     flex: 0 0 auto;
@@ -1309,11 +1557,13 @@
      editorial .stats-timeline above.) */
 
   .stats-side {
-    display: flex; flex-direction: column; justify-content: flex-start;
-    align-self: stretch; min-height: 0; height: 100%; max-height: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: clamp(18px, 2.5vw, 34px);
+    align-self: stretch; min-height: 0; height: auto; max-height: none;
     overflow: hidden;
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
+    -webkit-mask-image: none;
+    mask-image: none;
     padding: 0;
   }
   .stats-side h3 {
@@ -1323,8 +1573,8 @@
   }
   /* Tight, content-sized groups - they sit just below their headers
      rather than spreading to fill the column. */
-  .stats-side .grp { flex: 0 0 auto; }
-  .stats-side .grp + .grp { margin-top: 34px; }
+  .stats-side .grp { min-width: 0; }
+  .stats-side .grp + .grp { margin-top: 0; }
   .stats-side .grp small {
     display: block; font: 10.75px ui-monospace, Menlo, monospace; color: var(--ink-soft);
     letter-spacing: 0.06em; margin: 0 0 3px 12px;
@@ -1334,15 +1584,14 @@
     margin-bottom: 2px;
   }
   .stats-side .grp:first-child ol {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: block;
     gap: 8px 18px;
   }
   .stats-side li {
-    display: grid; grid-template-columns: 52px 1fr auto; gap: 14px;
+    display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 10px;
     padding: 6px 0;
     box-shadow: inset 0 -1px 0 rgba(26,22,18,0.05);
-    font: 18px/1.28 ui-serif, Georgia, serif; color: var(--ink);
+    font: 15.5px/1.22 ui-serif, Georgia, serif; color: var(--ink);
     align-items: baseline;
     transition: background 140ms ease, color 140ms ease;
   }
@@ -1879,6 +2128,242 @@
     }
   }
 
+  /* Final Stats layout order. Older responsive blocks above still tune
+     typography from the previous chart layout; these rules keep the new
+     summaries-first/calendar-bottom structure consistent. */
+  body[data-view="1"] .stats-side { order: 1; }
+  body[data-view="1"] .stats-timeline { order: 2; }
+  @media (min-width: 701px) {
+    body[data-view="1"] .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(280px, 1fr);
+      max-width: 1180px;
+      width: calc(100% - clamp(80px, 12vw, 180px));
+    }
+    body[data-view="1"] .stats-side {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: clamp(18px, 2.5vw, 34px);
+      max-width: none;
+    }
+    body[data-view="1"] .stats-side .grp + .grp {
+      margin-top: 0;
+    }
+  }
+  @media (min-width: 701px) and (max-width: 1000px) {
+    body[data-view="1"] .stats-side {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px 38px;
+    }
+  }
+  @media (max-width: 700px) {
+    .view#v1 .stats-grid,
+    body[data-view="1"] .stats-grid {
+      display: flex;
+      flex-direction: column;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      align-items: stretch;
+    }
+    .view#v1 .stats-side,
+    body[data-view="1"] .stats-side {
+      display: block;
+      order: 1;
+      flex: 0 0 auto;
+      width: 100%;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      padding-bottom: 0;
+      contain: layout;
+    }
+    .view#v1 .stats-side::after,
+    body[data-view="1"] .stats-side::after {
+      content: "";
+      display: block;
+      clear: both;
+    }
+    .view#v1 .stats-side .grp,
+    body[data-view="1"] .stats-side .grp {
+      display: block;
+      clear: both;
+      width: 100%;
+      min-width: 0;
+      overflow: visible;
+      margin: 0;
+    }
+    .view#v1 .stats-side .grp + .grp,
+    body[data-view="1"] .stats-side .grp + .grp {
+      margin-top: 30px;
+    }
+    .view#v1 .stats-side ol,
+    body[data-view="1"] .stats-side ol {
+      display: block;
+      width: 100%;
+      min-height: 0;
+      margin: 0;
+      overflow: visible;
+    }
+    .view#v1 .stats-side .grp:first-child ol,
+    body[data-view="1"] .stats-side .grp:first-child ol {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 14px;
+    }
+    .view#v1 .stats-side li,
+    body[data-view="1"] .stats-side li {
+      float: none;
+      position: relative;
+      z-index: 0;
+    }
+    .view#v1 .stats-timeline.is-recent-list,
+    body[data-view="1"] .stats-timeline.is-recent-list {
+      order: 99;
+      flex: 0 0 auto;
+      clear: both;
+      height: auto;
+      max-height: none;
+      min-height: 0;
+      overflow: visible;
+      margin: 34px 0 24px;
+      align-self: stretch;
+      position: relative;
+      z-index: 1;
+    }
+    .view#v1 .stats-season-panel,
+    body[data-view="1"] .stats-season-panel {
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+      display: block;
+      clear: both;
+      margin-top: 0;
+    }
+    .view#v1 .stats-season-inline,
+    body[data-view="1"] .stats-season-inline {
+      height: auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .view#v1 .stats-season-mobile-card,
+    .view#v1 .stats-season-modal,
+    body[data-view="1"] .stats-season-mobile-card,
+    body[data-view="1"] .stats-season-modal {
+      display: none;
+    }
+    .view#v1 .stats-season-top,
+    body[data-view="1"] .stats-season-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .view#v1 .stats-season-top h3,
+    body[data-view="1"] .stats-season-top h3 {
+      font-size: 11.5px;
+      letter-spacing: 0.16em;
+      padding-left: 8px;
+    }
+    .view#v1 .stats-season-top small,
+    body[data-view="1"] .stats-season-top small {
+      margin-left: 10px;
+      font-size: 9.25px;
+      line-height: 1.3;
+    }
+    .view#v1 .stats-season-summary,
+    body[data-view="1"] .stats-season-summary {
+      display: flex;
+      justify-content: flex-start;
+      gap: 7px;
+      text-align: left;
+      white-space: normal;
+    }
+    .view#v1 .stats-season-summary strong,
+    body[data-view="1"] .stats-season-summary strong {
+      font-size: 17px;
+    }
+    .view#v1 .stats-season-card,
+    body[data-view="1"] .stats-season-card {
+      flex: 0 0 auto;
+      width: 100%;
+      max-height: min(520px, 62vh);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 7px;
+    }
+    .view#v1 .stats-season-head,
+    .view#v1 .stats-season-row,
+    body[data-view="1"] .stats-season-head,
+    body[data-view="1"] .stats-season-row {
+      grid-template-columns: minmax(142px, 190px) minmax(500px, 1fr) 58px;
+      min-width: 720px;
+    }
+    .view#v1 .stats-season-head,
+    body[data-view="1"] .stats-season-head {
+      min-height: 34px;
+    }
+    .view#v1 .stats-season-head > div,
+    body[data-view="1"] .stats-season-head > div {
+      padding: 0 8px;
+      font-size: 8.5px;
+    }
+    .view#v1 .stats-season-row,
+    body[data-view="1"] .stats-season-row {
+      min-height: 44px;
+    }
+    .view#v1 .stats-season-bird,
+    body[data-view="1"] .stats-season-bird {
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 8px;
+      padding: 5px 8px;
+    }
+    .view#v1 .stats-season-bird img,
+    body[data-view="1"] .stats-season-bird img {
+      width: 27px;
+      height: 27px;
+    }
+    .view#v1 .stats-season-bird strong,
+    body[data-view="1"] .stats-season-bird strong {
+      font-size: 13.5px;
+    }
+    .view#v1 .stats-season-bird em,
+    body[data-view="1"] .stats-season-bird em {
+      display: none;
+    }
+    .view#v1 .stats-season-heat,
+    body[data-view="1"] .stats-season-heat {
+      gap: 1px;
+      padding: 8px;
+    }
+    .view#v1 .stats-season-cell,
+    body[data-view="1"] .stats-season-cell {
+      height: 20px;
+      border-radius: 2px;
+    }
+    .view#v1 .stats-season-count,
+    body[data-view="1"] .stats-season-count {
+      padding: 0 8px;
+    }
+    .view#v1 .stats-season-count strong,
+    body[data-view="1"] .stats-season-count strong {
+      font-size: 11.5px;
+    }
+    .view#v1 .stats-season-count span,
+    body[data-view="1"] .stats-season-count span {
+      display: none;
+    }
+    .view#v1 .stats-season-legend,
+    body[data-view="1"] .stats-season-legend {
+      gap: 8px 10px;
+      margin: 8px 0 0;
+      font-size: 8.5px;
+      line-height: 1.35;
+    }
+  }
+
   /* (Histogram strip removed - charts moved into the stats-grid LEFT
      column as full-bleed chart cards. See .stats-charts above.) */
 
@@ -1894,6 +2379,10 @@
     display: inline-flex; padding: 3px; position: relative;
     background: var(--paper-2); border-radius: 999px;
     box-shadow: var(--recess);
+  }
+  .atlas-sort .seg-pill {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px rgba(26,22,18,0.10);
   }
   .atlas-sort button {
     background: transparent; border: 0; color: var(--ink-soft);
@@ -1922,7 +2411,23 @@
     max-width: 1280px; margin: 0 auto;
   }
   @media (max-width: 700px) {
-    .atlas-grid { grid-template-columns: 1fr; gap: 16px; }
+    .view#v2 {
+      overflow-x: hidden;
+      overscroll-behavior-x: none;
+      touch-action: pan-y;
+    }
+    .view#v2 .atlas-controls,
+    .view#v2 .atlas-grid {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: clip;
+    }
+    .atlas-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .view#v2 .bird-card {
+      max-width: 100%;
+      min-width: 0;
+    }
   }
   .bird-card {
     position: relative;
@@ -2384,6 +2889,8 @@
     text-transform: lowercase;
   }
   .purge-controls select,
+  .purge-controls input[type="text"],
+  .purge-controls input[type="datetime-local"],
   .purge-confirm input {
     min-width: 0;
     border: 0;
@@ -2402,8 +2909,17 @@
       linear-gradient(135deg, currentColor 50%, transparent 50%) calc(100% - 10px) 50% / 5px 5px no-repeat,
       var(--paper-2);
   }
+  .purge-controls input[type="datetime-local"] {
+    padding: 8px 10px;
+  }
+  .purge-controls input[type="text"] {
+    padding: 8px 10px;
+  }
   .eval-controls {
     grid-template-columns: 52px minmax(0, 1fr) auto;
+  }
+  .eval-controls-wide {
+    grid-template-columns: 64px minmax(0, 1fr) auto;
   }
   .eval-controls button {
     border: 0;
@@ -2424,6 +2940,10 @@
   .admin-action.mic-health {
     grid-column: 1 / -1;
     box-shadow: inset 0 0 0 1px rgba(114,92,50,0.16), var(--edge);
+  }
+  .admin-action.mic-eval {
+    grid-column: 1 / -1;
+    box-shadow: inset 0 0 0 1px rgba(74,111,82,0.16), var(--edge);
   }
   .admin-action.birdfy-tool {
     grid-column: 1 / -1;

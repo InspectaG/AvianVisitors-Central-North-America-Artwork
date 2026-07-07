@@ -52,6 +52,7 @@ $ALLOWED = [
     'AV_AUDIO_FILTER'    => ['type' => 'int',   'min' => 0,    'max' => 1, 'restart' => true],
     'AV_FILTER_HIGHPASS' => ['type' => 'int',   'min' => 20,   'max' => 3000, 'restart' => true],
     'AV_FILTER_LOWPASS'  => ['type' => 'int',   'min' => 1000, 'max' => 20000, 'restart' => true],
+    'AV_DISPLAY_REFRESH_SECONDS' => ['type' => 'int', 'min' => 5, 'max' => 300],
 ];
 
 function read_conf(string $path): array {
@@ -141,6 +142,7 @@ if ($method === 'GET') {
         'BIRDFY_EMAIL' => '',
         'BIRDFY_PASSWORD' => '',
         'BIRDFY_IMPORT_WINDOW_HOURS' => '24',
+        'AV_DISPLAY_REFRESH_SECONDS' => '30',
     ];
     $out = [];
     foreach ($ALLOWED as $k => $spec) {

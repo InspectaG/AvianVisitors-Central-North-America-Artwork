@@ -9,10 +9,12 @@
 //   night       - &hours=N: species heard during configured night hours
 //   species     - &sci=<sci_name>: per-species detail page
 //   timeseries  - &days=N: daily detection counts per species
+//   seasonality - weekly species detection counts across the calendar year
 //   firstseen   - every species' earliest detection
 //   seasonfirst - every species' first detection since Jan 1
 //   ebird_nearby - eBird recent nearby reports, matched by scientific name
 //   filter_eval - compare recent detections against the prior equal window
+//   mic_eval    - compare detections before/after a mic hardware change
 //
 // Default LAN deploy ships without auth. If you've exposed the Pi via
 // Cloudflare or a tunnel, add a Caddy `basic_auth` matcher around the
@@ -97,7 +99,8 @@ function http_json_get(string $url, array $headers, int $timeout = 8): array {
     ]);
     $raw = @file_get_contents($url, false, $ctx);
     $status = 0;
-    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
+    $headers = function_exists('http_get_last_response_headers') ? http_get_last_response_headers() : [];
+    if (isset($headers[0]) && preg_match('/\s(\d{3})\s/', $headers[0], $m)) {
         $status = (int)$m[1];
     }
     if ($raw === false) return ['ok' => false, 'status' => $status, 'error' => 'request failed'];
@@ -304,6 +307,100 @@ switch ($action) {
             'by_hour' => $by_hour,
             'as_of'   => date('c'),
         ]);
+        break;
+    }
+
+    case 'seasonality': {
+        // Weekly "migration calendar" buckets by day-of-year, aggregated
+        // across all local detections. week_index is 0..51 so the frontend
+        // can render a stable 52-column calendar even across leap years.
+        $limit = max(1, min(120, (int)($_GET['limit'] ?? 60)));
+        $minTotal = max(1, min(1000, (int)($_GET['min_total'] ?? 1)));
+        $cacheKey = sprintf('avian-seasonality-%d-%d.json', $limit, $minTotal);
+        $cachePath = sys_get_temp_dir() . '/' . $cacheKey;
+        $cacheTtl = 5 * 60;
+        $dbMtime = @filemtime($DB_PATH) ?: 0;
+        if (is_readable($cachePath) && (time() - filemtime($cachePath)) < $cacheTtl && filemtime($cachePath) >= $dbMtime) {
+            $cached = json_decode((string)file_get_contents($cachePath), true);
+            if (is_array($cached)) {
+                $cached['cache'] = 'hit';
+                echo json_encode($cached);
+                break;
+            }
+        }
+        $species = rows($db,
+          "SELECT Sci_Name AS sci, Com_Name AS com, COUNT(*) AS total, "
+        . "       MIN(Date||' '||Time) AS first_seen, MAX(Date||' '||Time) AS last_seen "
+        . "FROM detections "
+        . "GROUP BY Sci_Name "
+        . "HAVING total >= :min_total "
+        . "ORDER BY total DESC, com ASC "
+        . "LIMIT :lim",
+          [':min_total' => $minTotal, ':lim' => $limit]
+        );
+        $weeks = rows($db,
+          "SELECT Sci_Name AS sci, "
+        . "       MIN(51, CAST((CAST(strftime('%j', Date) AS INT) - 1) / 7 AS INT)) AS week_index, "
+        . "       COUNT(*) AS n "
+        . "FROM detections "
+        . "WHERE Sci_Name IN ("
+        . "  SELECT Sci_Name FROM detections GROUP BY Sci_Name HAVING COUNT(*) >= :min_total "
+        . "  ORDER BY COUNT(*) DESC, Com_Name ASC LIMIT :lim"
+        . ") "
+        . "GROUP BY Sci_Name, week_index "
+        . "ORDER BY Sci_Name, week_index",
+          [':min_total' => $minTotal, ':lim' => $limit]
+        );
+        $bySci = [];
+        foreach ($species as $s) {
+            $sci = (string)($s['sci'] ?? '');
+            if ($sci === '') continue;
+            $bySci[$sci] = array_merge($s, [
+                'weeks' => array_fill(0, 52, 0),
+                'peak_week' => null,
+                'peak_count' => 0,
+                'arrival_week' => null,
+                'departure_week' => null,
+            ]);
+        }
+        foreach ($weeks as $w) {
+            $sci = (string)($w['sci'] ?? '');
+            if (!isset($bySci[$sci])) continue;
+            $idx = max(0, min(51, (int)($w['week_index'] ?? 0)));
+            $n = (int)($w['n'] ?? 0);
+            $bySci[$sci]['weeks'][$idx] = $n;
+            if ($n > (int)$bySci[$sci]['peak_count']) {
+                $bySci[$sci]['peak_count'] = $n;
+                $bySci[$sci]['peak_week'] = $idx;
+            }
+        }
+        foreach ($bySci as &$s) {
+            $peak = max(1, (int)$s['peak_count']);
+            $threshold = max(1, min(5, (int)ceil($peak * 0.15)));
+            for ($i = 0; $i < 52; $i++) {
+                if ((int)$s['weeks'][$i] >= $threshold) {
+                    $s['arrival_week'] = $i;
+                    break;
+                }
+            }
+            for ($i = 51; $i >= 0; $i--) {
+                if ((int)$s['weeks'][$i] >= $threshold) {
+                    $s['departure_week'] = $i;
+                    break;
+                }
+            }
+        }
+        unset($s);
+        $total = (int)(one($db, 'SELECT COUNT(*) AS n FROM detections')['n'] ?? 0);
+        $out = [
+            'weeks' => 52,
+            'species' => array_values($bySci),
+            'total_detections' => $total,
+            'as_of' => date('c'),
+            'cache' => 'miss',
+        ];
+        @file_put_contents($cachePath, json_encode($out));
+        echo json_encode($out);
         break;
     }
 
@@ -543,6 +640,176 @@ switch ($action) {
                 'high_rate' => $deltaHigh,
                 'low_rate' => $deltaLow,
                 'species_retention' => $retention,
+                'score' => round($score, 2),
+            ],
+            'species' => [
+                'retained' => $retained,
+                'lost' => $lost,
+                'gained' => $gained,
+            ],
+            'verdict' => ['label' => $label, 'tone' => $tone, 'explain' => $explain],
+            'as_of' => date('c'),
+        ]);
+        break;
+    }
+
+    case 'mic_eval': {
+        // Hardware comparison: the user supplies the upgrade/change time,
+        // and we compare an equal-length window before and after it.
+        $hours = max(1, min(720, (int)($_GET['hours'] ?? 24)));
+        $changedAtRaw = trim((string)($_GET['changed_at'] ?? ''));
+        $upgradeLabel = trim((string)($_GET['label'] ?? ''));
+        $upgradeLabel = substr($upgradeLabel, 0, 80);
+        $high = max(0.5, min(0.99, (float)($_GET['high'] ?? 0.80)));
+        $low = max(0.01, min($high, (float)($_GET['low'] ?? 0.60)));
+        if ($changedAtRaw === '') {
+            $changedAtDb = (string)(one($db, "SELECT strftime('%Y-%m-%d %H:%M:00','now','localtime') AS t")['t'] ?? '');
+        } else {
+            $changedAtDb = str_replace('T', ' ', $changedAtRaw);
+            if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $changedAtDb)) {
+                $changedAtDb .= ':00';
+            }
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $changedAtDb)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid changed_at']);
+            break;
+        }
+        $minus = '-' . $hours . ' hours';
+        $plus = '+' . $hours . ' hours';
+        $win = one($db,
+          "SELECT datetime(:changed) AS changed_at, "
+        . "       datetime(:changed, :minus) AS before_start, "
+        . "       datetime(:changed) AS before_end, "
+        . "       datetime(:changed) AS after_start, "
+        . "       CASE WHEN julianday(datetime('now','localtime')) < julianday(datetime(:changed, :plus)) "
+        . "            THEN strftime('%Y-%m-%d %H:%M:%S','now','localtime') "
+        . "            ELSE datetime(:changed, :plus) END AS after_end, "
+        . "       (julianday(datetime(:changed)) - julianday(datetime(:changed, :minus))) * 24.0 AS before_hours, "
+        . "       (julianday(CASE WHEN julianday(datetime('now','localtime')) < julianday(datetime(:changed, :plus)) "
+        . "            THEN strftime('%Y-%m-%d %H:%M:%S','now','localtime') "
+        . "            ELSE datetime(:changed, :plus) END) - julianday(datetime(:changed))) * 24.0 AS after_hours",
+          [':changed' => $changedAtDb, ':minus' => $minus, ':plus' => $plus]
+        ) ?: [];
+        if (empty($win['changed_at'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid changed_at']);
+            break;
+        }
+        $beforeStart = (string)$win['before_start'];
+        $beforeEnd = (string)$win['before_end'];
+        $afterStart = (string)$win['after_start'];
+        $afterEnd = (string)$win['after_end'];
+        $beforeHours = max(0.01, (float)($win['before_hours'] ?? $hours));
+        $afterHours = max(0.01, (float)($win['after_hours'] ?? 0.01));
+
+        $summary = function (string $start, string $end, float $spanHours) use ($db, $high, $low): array {
+            $r = one($db,
+              "SELECT COUNT(*) AS detections, COUNT(DISTINCT Sci_Name) AS species, "
+            . "       AVG(Confidence) AS avg_conf, "
+            . "       SUM(CASE WHEN Confidence >= :high THEN 1 ELSE 0 END) AS high_count, "
+            . "       SUM(CASE WHEN Confidence < :low THEN 1 ELSE 0 END) AS low_count, "
+            . "       MIN(Date||' '||Time) AS oldest, MAX(Date||' '||Time) AS newest "
+            . "FROM detections WHERE Date||' '||Time >= :start AND Date||' '||Time < :end",
+              [':start' => $start, ':end' => $end, ':high' => $high, ':low' => $low]
+            ) ?: [];
+            $detections = (int)($r['detections'] ?? 0);
+            $highCount = (int)($r['high_count'] ?? 0);
+            $lowCount = (int)($r['low_count'] ?? 0);
+            return [
+                'detections' => $detections,
+                'species' => (int)($r['species'] ?? 0),
+                'avg_conf' => $r['avg_conf'] === null ? null : round((float)$r['avg_conf'], 4),
+                'high_count' => $highCount,
+                'low_count' => $lowCount,
+                'high_rate' => $detections ? round($highCount / $detections, 4) : null,
+                'low_rate' => $detections ? round($lowCount / $detections, 4) : null,
+                'detections_per_hour' => round($detections / max(0.01, $spanHours), 3),
+                'oldest' => $r['oldest'] ?? null,
+                'newest' => $r['newest'] ?? null,
+                'hours_observed' => round($spanHours, 2),
+            ];
+        };
+
+        $speciesRows = function (string $start, string $end) use ($db): array {
+            return rows($db,
+              "SELECT Sci_Name AS sci, Com_Name AS com, COUNT(*) AS n, "
+            . "       AVG(Confidence) AS avg_conf, MAX(Confidence) AS best_conf, "
+            . "       MAX(Date||' '||Time) AS last_seen "
+            . "FROM detections WHERE Date||' '||Time >= :start AND Date||' '||Time < :end "
+            . "GROUP BY Sci_Name ORDER BY n DESC, best_conf DESC",
+              [':start' => $start, ':end' => $end]
+            );
+        };
+
+        $before = $summary($beforeStart, $beforeEnd, $beforeHours);
+        $after = $summary($afterStart, $afterEnd, $afterHours);
+        $beforeSpecies = $speciesRows($beforeStart, $beforeEnd);
+        $afterSpecies = $speciesRows($afterStart, $afterEnd);
+
+        $beforeMap = [];
+        foreach ($beforeSpecies as $s) $beforeMap[(string)$s['sci']] = $s;
+        $afterMap = [];
+        foreach ($afterSpecies as $s) $afterMap[(string)$s['sci']] = $s;
+        $retained = 0;
+        foreach ($afterMap as $sci => $_) if (isset($beforeMap[$sci])) $retained++;
+        $lost = [];
+        foreach ($beforeSpecies as $s) if (!isset($afterMap[(string)$s['sci']]) && count($lost) < 8) $lost[] = $s;
+        $gained = [];
+        foreach ($afterSpecies as $s) if (!isset($beforeMap[(string)$s['sci']]) && count($gained) < 8) $gained[] = $s;
+
+        $deltaRate = round($after['detections_per_hour'] - $before['detections_per_hour'], 3);
+        $deltaAvg = ($after['avg_conf'] === null || $before['avg_conf'] === null) ? null : round($after['avg_conf'] - $before['avg_conf'], 4);
+        $deltaHigh = ($after['high_rate'] === null || $before['high_rate'] === null) ? null : round($after['high_rate'] - $before['high_rate'], 4);
+        $deltaLow = ($after['low_rate'] === null || $before['low_rate'] === null) ? null : round($after['low_rate'] - $before['low_rate'], 4);
+        $deltaSpecies = $after['species'] - $before['species'];
+        $rateLift = $before['detections_per_hour'] > 0 ? round($deltaRate / $before['detections_per_hour'], 4) : null;
+
+        $score = 0.0;
+        $enough = $before['detections'] >= 5 && $after['detections'] >= 5;
+        if ($enough) {
+            if ($rateLift !== null) $score += max(-10, min(10, $rateLift * 12));
+            if ($deltaAvg !== null) $score += max(-8, min(8, $deltaAvg * 100));
+            if ($deltaHigh !== null) $score += max(-6, min(6, $deltaHigh * 18));
+            if ($deltaLow !== null) $score -= max(-5, min(5, $deltaLow * 12));
+            $score += max(-4, min(4, $deltaSpecies * 0.8));
+        }
+        if (!$enough) {
+            $label = 'not enough data';
+            $tone = 'neutral';
+            $explain = 'Need at least 5 detections before and after the hardware change.';
+        } elseif ($score >= 5) {
+            $label = 'upgrade looks better';
+            $tone = 'good';
+            $explain = 'Detection rate, confidence, or species coverage improved after the change.';
+        } elseif ($score <= -5) {
+            $label = 'upgrade may be worse';
+            $tone = 'warn';
+            $explain = 'The after window is weaker than the baseline. Check gain, clipping, and aiming.';
+        } else {
+            $label = 'inconclusive';
+            $tone = 'neutral';
+            $explain = 'The before/after difference is not strong enough to call yet.';
+        }
+
+        echo json_encode([
+            'hours' => $hours,
+            'label' => $upgradeLabel,
+            'changed_at' => str_replace(' ', 'T', substr((string)$win['changed_at'], 0, 16)),
+            'thresholds' => ['high' => $high, 'low' => $low],
+            'windows' => [
+                'before' => ['start' => $beforeStart, 'end' => $beforeEnd],
+                'after' => ['start' => $afterStart, 'end' => $afterEnd],
+            ],
+            'before' => $before,
+            'after' => $after,
+            'delta' => [
+                'detections_per_hour' => $deltaRate,
+                'rate_lift' => $rateLift,
+                'avg_conf' => $deltaAvg,
+                'high_rate' => $deltaHigh,
+                'low_rate' => $deltaLow,
+                'species' => $deltaSpecies,
                 'score' => round($score, 2),
             ],
             'species' => [
