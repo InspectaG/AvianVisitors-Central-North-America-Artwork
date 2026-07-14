@@ -173,6 +173,33 @@ EOF
 }
 
 install_Caddyfile() {
+  FPM_SOCK=$(ls /run/php/php*-fpm.sock 2>/dev/null | head -n1)
+  FPM_SOCK=${FPM_SOCK:-/run/php/php-fpm.sock}
+  local port_file=/etc/birdnet/avian-web-port
+  local current_port=""
+  if [ -r "$port_file" ]; then
+    current_port=$(tr -cd '0-9' < "$port_file")
+  elif [ -r /etc/caddy/Caddyfile ]; then
+    current_port=$(sed -n 's/^:\([0-9][0-9]*\).*/\1/p' /etc/caddy/Caddyfile | head -n1)
+  fi
+  AVIAN_WEB_PORT=${BIRDNET_WEB_PORT:-${current_port:-80}}
+  if ! [[ "$AVIAN_WEB_PORT" =~ ^[0-9]+$ ]] || [ "$AVIAN_WEB_PORT" -lt 1 ] || [ "$AVIAN_WEB_PORT" -gt 65535 ]; then
+    AVIAN_WEB_PORT=80
+  fi
+  if [ "$AVIAN_WEB_PORT" -eq 80 ] && ! systemctl is-active --quiet caddy && ss -H -ltn 'sport = :80' | grep -q .; then
+    AVIAN_WEB_PORT=8081
+    while ss -H -ltn "sport = :${AVIAN_WEB_PORT}" | grep -q .; do
+      AVIAN_WEB_PORT=$((AVIAN_WEB_PORT + 1))
+    done
+  fi
+  mkdir -p "$(dirname "$port_file")"
+  printf '%s\n' "$AVIAN_WEB_PORT" > "$port_file"
+  if [ "$AVIAN_WEB_PORT" -eq 80 ]; then
+    CADDY_SITE="http:// ${BIRDNETPI_URL}"
+  else
+    CADDY_SITE=":${AVIAN_WEB_PORT}"
+  fi
+
   [ -d /etc/caddy ] || mkdir /etc/caddy
   if [ -f /etc/caddy/Caddyfile ];then
     cp /etc/caddy/Caddyfile{,.original}
@@ -180,8 +207,10 @@ install_Caddyfile() {
   if ! [ -z ${CADDY_PWD} ];then
   HASHWORD=$(caddy hash-password --plaintext ${CADDY_PWD})
   cat << EOF > /etc/caddy/Caddyfile
-http:// ${BIRDNETPI_URL} {
+${CADDY_SITE} {
   root * ${EXTRACTED}
+  @avian_root path /
+  redir @avian_root /avian/frontend/index.html 302
   @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
   header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
@@ -210,7 +239,9 @@ http:// ${BIRDNETPI_URL} {
     birdnet ${HASHWORD}
   }
   reverse_proxy /stream localhost:8000
-  php_fastcgi unix//run/php/php-fpm.sock
+  php_fastcgi unix/${FPM_SOCK} {
+    try_files {path} {path}/index.html {path}/index.php index.php
+  }
   reverse_proxy /log* localhost:8080
   reverse_proxy /stats* localhost:8501
   reverse_proxy /terminal* localhost:8888
@@ -218,8 +249,10 @@ http:// ${BIRDNETPI_URL} {
 EOF
   else
     cat << EOF > /etc/caddy/Caddyfile
-http:// ${BIRDNETPI_URL} {
+${CADDY_SITE} {
   root * ${EXTRACTED}
+  @avian_root path /
+  redir @avian_root /avian/frontend/index.html 302
   @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
   header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
@@ -230,7 +263,9 @@ http:// ${BIRDNETPI_URL} {
     file_server browse
   }
   reverse_proxy /stream localhost:8000
-  php_fastcgi unix//run/php/php-fpm.sock
+  php_fastcgi unix/${FPM_SOCK} {
+    try_files {path} {path}/index.html {path}/index.php index.php
+  }
   reverse_proxy /log* localhost:8080
   reverse_proxy /stats* localhost:8501
   reverse_proxy /terminal* localhost:8888
