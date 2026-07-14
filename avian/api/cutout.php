@@ -2,10 +2,11 @@
 // AvianVisitors - bird image resolver.
 //
 // Lookup chain for /avian/api/cutout.php?sci=Calypte+anna:
-//   1. ../assets/illustrations/<slug>.png   (450+ bundled kachō-e renders)
-//   2. ../assets/cutouts/<slug>.png         (background-removed photo)
-//   3. cached rembg of a Wikipedia photo at $HOME/BirdSongs/Extracted/cutouts/
-//   4. fresh Wikipedia -> rembg -> cache (skipped gracefully if rembg unset)
+//   1. ../assets/illustrations-<style>/<slug>.png (selected alternate style)
+//   2. ../assets/illustrations/<slug>.png         (bundled kachō-e renders)
+//   3. ../assets/cutouts/<slug>.png               (background-removed photo)
+//   4. cached rembg of a Wikipedia photo at $HOME/BirdSongs/Extracted/cutouts/
+//   5. fresh Wikipedia -> rembg -> cache (skipped gracefully if rembg unset)
 //
 // The frontend's <img src> points here for every species - bundled
 // hits return instantly; cold misses fall through to the dynamic path.
@@ -38,44 +39,108 @@ $slug = trim((string)$slug, '-');
 $pose = (int)($_GET['pose'] ?? 1);
 if ($pose < 1 || $pose > 99) $pose = 1;
 $poseSuffix = $pose === 1 ? '' : "-$pose";
+$THUMB_REQUESTED = (string)($_GET['thumb'] ?? '') === '1';
+
+$style = strtolower(trim((string)($_GET['style'] ?? 'gemini')));
+$styleDirs = [
+    'gemini' => 'illustrations',
+    'classic' => 'illustrations',
+    'openai-watercolor' => 'illustrations-openai-watercolor',
+    'openai-ink' => 'illustrations-openai-ink',
+    'openai-paper-cut' => 'illustrations-openai-paper-cut',
+    'openai-poster' => 'illustrations-openai-poster',
+    'openai-vintage' => 'illustrations-openai-vintage',
+    'openai-gouache' => 'illustrations-openai-gouache',
+    'openai-minimal' => 'illustrations-openai-minimal',
+];
+if (!isset($styleDirs[$style]) && preg_match('/^openai-custom-[a-z0-9-]{1,48}$/', $style)) {
+    $styleDirs[$style] = 'illustrations-' . $style;
+}
+if (!isset($styleDirs[$style])) $style = 'gemini';
 
 function serve_png(string $path): void {
-    header('Content-Type: image/png');
+    global $THUMB_REQUESTED;
+    $contentType = 'image/png';
+    if ($THUMB_REQUESTED) {
+        $max = 384;
+        $useWebp = function_exists('imagewebp');
+        $extension = $useWebp ? 'webp' : 'png';
+        $mtime = @filemtime($path) ?: 0;
+        $cacheDir = sys_get_temp_dir() . '/avian-cutout-thumbs';
+        $cachePath = $cacheDir . '/' . hash('sha256', $path . '|' . $mtime . '|' . $max . '|' . $extension) . '.' . $extension;
+        if (!is_file($cachePath) || filesize($cachePath) < 512) {
+            if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
+            if (function_exists('imagecreatefrompng')) {
+                $im = @imagecreatefrompng($path);
+                if ($im) {
+                    $w = imagesx($im);
+                    $h = imagesy($im);
+                    $scale = min(1, $max / max($w, $h));
+                    $nw = max(1, (int)round($w * $scale));
+                    $nh = max(1, (int)round($h * $scale));
+                    $resized = imagecreatetruecolor($nw, $nh);
+                    imagealphablending($resized, false);
+                    imagesavealpha($resized, true);
+                    imagecopyresampled($resized, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
+                    if ($useWebp) @imagewebp($resized, $cachePath, 78);
+                    else @imagepng($resized, $cachePath, 6);
+                    imagedestroy($resized);
+                    imagedestroy($im);
+                }
+            } elseif (is_executable('/usr/bin/ffmpeg')) {
+                $cmd = '/usr/bin/ffmpeg -y -loglevel error -i ' . escapeshellarg($path)
+                    . ' -vf ' . escapeshellarg('scale=384:-2')
+                    . ($useWebp ? ' -frames:v 1 -c:v libwebp -q:v 78 ' : ' -frames:v 1 -c:v png -pix_fmt rgba ')
+                    . escapeshellarg($cachePath);
+                @exec($cmd);
+            }
+        }
+        if (is_file($cachePath) && filesize($cachePath) >= 512) {
+            $path = $cachePath;
+            $contentType = $useWebp ? 'image/webp' : 'image/png';
+        }
+    }
+    header('Content-Type: ' . $contentType);
     header('Cache-Control: public, max-age=86400');
     header('Content-Length: ' . (string)filesize($path));
     readfile($path);
     exit;
 }
 
-// 1. Bundled illustration with pose suffix (the kachō-e PNG the repo
-//    ships with). 450+ species cover both perched + flight.
-$bundled = dirname(__DIR__) . "/assets/illustrations/{$slug}{$poseSuffix}.png";
-if (is_file($bundled) && filesize($bundled) > 1024) {
-    serve_png($bundled);
-}
-// Pose-2 missing? Fall back to pose-1 so the flight tab still shows
-// the perched render instead of breaking to the photo fallback.
-if ($pose !== 1) {
-    $fallback = dirname(__DIR__) . "/assets/illustrations/$slug.png";
-    if (is_file($fallback) && filesize($fallback) > 1024) {
-        serve_png($fallback);
+// 1-2. Bundled illustration with pose suffix. If the selected style is
+// missing for a species, quietly fall back to the classic kachō-e set.
+$assetRoot = dirname(__DIR__) . '/assets';
+$dirs = [$styleDirs[$style]];
+if ($styleDirs[$style] !== 'illustrations') $dirs[] = 'illustrations';
+foreach ($dirs as $dir) {
+    $bundled = "$assetRoot/$dir/{$slug}{$poseSuffix}.png";
+    if (is_file($bundled) && filesize($bundled) > 1024) {
+        serve_png($bundled);
+    }
+    // Pose-2 missing? Fall back to pose-1 in the same style before
+    // trying the next style/photo source.
+    if ($pose !== 1) {
+        $fallback = "$assetRoot/$dir/$slug.png";
+        if (is_file($fallback) && filesize($fallback) > 1024) {
+            serve_png($fallback);
+        }
     }
 }
-// 2. Bundled cutout (background-removed photo, fallback for species
+// 3. Bundled cutout (background-removed photo, fallback for species
 //    without an illustration).
-$cutout = dirname(__DIR__) . "/assets/cutouts/$slug.png";
+$cutout = "$assetRoot/cutouts/$slug.png";
 if (is_file($cutout) && filesize($cutout) > 1024) {
     serve_png($cutout);
 }
 
-// 3. Dynamic cache from a previous Wikipedia + rembg run.
+// 4. Dynamic cache from a previous Wikipedia + rembg run.
 $cacheDir = dirname(__DIR__, 3) . '/BirdSongs/Extracted/cutouts';
 $cachePath = "$cacheDir/$slug.png";
 if (is_file($cachePath) && filesize($cachePath) > 1024) {
     serve_png($cachePath);
 }
 
-// 4. Fresh Wikipedia fetch + rembg. Skipped if rembg-cli isn't on
+// 5. Fresh Wikipedia fetch + rembg. Skipped if rembg-cli isn't on
 //    PATH - the resolver returns a 404 in that case rather than
 //    burning a Wikipedia request we can't use.
 $rembg = '/usr/local/bin/rembg-cli';

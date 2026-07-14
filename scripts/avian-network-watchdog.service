@@ -1,0 +1,6 @@
+[Unit]
+Description=AvianVisitors Wi-Fi recovery watchdog
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/avian-network-watchdog

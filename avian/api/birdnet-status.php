@@ -230,14 +230,33 @@ function mixer_get(int $card, string $control): array {
             'raw' => $raw,
         ];
     }
-    if (preg_match('/Capture\s+\d+\s+\[(\d+)%\]\s+(?:\[[^\]]+\]\s+)?\[(on|off)\]/i', $raw, $m) ||
-        preg_match('/Mono:.*?\[(\d+)%\].*?\[(on|off)\]/i', $raw, $m)) {
+    $limits = [];
+    if (preg_match('/Limits:.*?Capture\s+(\d+)\s+-\s+(\d+)/i', $raw, $lm)) {
+        $limits = ['min' => (int)$lm[1], 'max' => (int)$lm[2]];
+    }
+    if (preg_match('/Capture\s+(\d+)\s+\[(\d+)%\]\s+(?:\[([+-]?\d+(?:\.\d+)?)dB\]\s+)?\[(on|off)\]/i', $raw, $m)) {
+        return [
+            'ok' => true,
+            'card' => $card,
+            'control' => $control,
+            'value' => (int)$m[1],
+            'percent' => (int)$m[2],
+            'db' => isset($m[3]) && $m[3] !== '' ? (float)$m[3] : null,
+            'enabled' => strtolower($m[4]) === 'on',
+            'limits' => $limits,
+            'step_count' => isset($limits['max']) ? ($limits['max'] - ($limits['min'] ?? 0) + 1) : null,
+            'raw' => $raw,
+        ];
+    }
+    if (preg_match('/Mono:.*?\[(\d+)%\].*?\[(on|off)\]/i', $raw, $m)) {
         return [
             'ok' => true,
             'card' => $card,
             'control' => $control,
             'percent' => (int)$m[1],
             'enabled' => strtolower($m[2]) === 'on',
+            'limits' => $limits,
+            'step_count' => isset($limits['max']) ? ($limits['max'] - ($limits['min'] ?? 0) + 1) : null,
             'raw' => $raw,
         ];
     }
@@ -247,6 +266,26 @@ function mixer_get(int $card, string $control): array {
         'control' => $control,
         'error' => trim($raw) ?: 'Capture mixer control not found',
     ];
+}
+
+function mixer_capture_elements(int $card, string $control): array {
+    $raw = shellout('amixer -c ' . (int)$card . ' contents');
+    $blocks = preg_split('/(?=numid=)/', $raw) ?: [];
+    $volume = null;
+    $switch = null;
+    $wantVolume = [$control . ' Capture Volume', $control . ' Volume', 'Capture Volume'];
+    $wantSwitch = [$control . ' Capture Switch', $control . ' Switch', 'Capture Switch'];
+    foreach ($blocks as $block) {
+        if (!preg_match('/numid=(\d+),.*?name=\'([^\']+)\'/s', $block, $m)) continue;
+        $name = $m[2];
+        if ($volume === null && in_array($name, $wantVolume, true) && stripos($block, 'type=INTEGER') !== false) {
+            $volume = ['numid' => (int)$m[1], 'name' => $name];
+        }
+        if ($switch === null && in_array($name, $wantSwitch, true) && stripos($block, 'type=BOOLEAN') !== false) {
+            $switch = ['numid' => (int)$m[1], 'name' => $name];
+        }
+    }
+    return ['volume' => $volume, 'switch' => $switch];
 }
 
 function discover_mic_gain(): array {
@@ -294,14 +333,23 @@ function set_mic_gain(int $percent): array {
     $current = read_mic_gain();
     if (empty($current['ok'])) return $current + ['requested_percent' => $percent, 'set_ok' => false];
     $rc = 0; $out = [];
-    exec(
-        'amixer -q -c ' . (int)$current['card'] . ' sset ' . escapeshellarg($current['control']) . ' ' . $percent . '% cap 2>&1',
-        $out,
-        $rc
-    );
+    $elements = mixer_capture_elements((int)$current['card'], (string)$current['control']);
+    if (!empty($elements['volume']['numid'])) {
+        if (!empty($elements['switch']['numid'])) {
+            exec('amixer -q -c ' . (int)$current['card'] . ' cset numid=' . (int)$elements['switch']['numid'] . ' on 2>&1', $out, $switchRc);
+        }
+        exec('amixer -q -c ' . (int)$current['card'] . ' cset numid=' . (int)$elements['volume']['numid'] . ' ' . $percent . '% 2>&1', $out, $rc);
+    } else {
+        exec(
+            'amixer -q -c ' . (int)$current['card'] . ' sset ' . escapeshellarg($current['control']) . ' ' . $percent . '% cap 2>&1',
+            $out,
+            $rc
+        );
+    }
     $gain = read_mic_gain();
     $gain['requested_percent'] = $percent;
     $gain['set_ok'] = $rc === 0;
+    $gain['set_target'] = $elements;
     if ($rc !== 0) $gain['error'] = implode("\n", $out) ?: 'amixer failed';
     return $gain;
 }

@@ -14,9 +14,262 @@
   var API_BASE = location.pathname.indexOf('/avian/frontend/') !== -1 ? '/avian/api/' : './avian/api/';
   var SITE_TIME_ZONE = 'America/New_York';
   var SITE_TIME_LABEL = 'ET';
+  var ART_STYLE = 'gemini';
+  // A style can have been cached as the classic fallback before its own
+  // artwork existed. Rotate this token when style/files change so the
+  // resolver gets a fresh chance without a hard browser reset.
+  var ART_STYLE_CACHE_BUSTER = String(Date.now());
+  var APP_LOAD_START = Date.now();
+  var APP_VERSION = '1.49';
+  var APP_LOAD_MEASURED = false;
+  var APP_LOAD_PENDING = 0;
+  var APP_LOAD_ERRORS = 0;
+
+  function measureInitialCollageLoad(collage) {
+    if (APP_LOAD_MEASURED || !collage) return;
+    var images = [].slice.call(collage.querySelectorAll('img'));
+    if (!images.length) return;
+    APP_LOAD_PENDING = images.length;
+    var settle = function (ok) {
+      if (ok === false) APP_LOAD_ERRORS += 1;
+      APP_LOAD_PENDING -= 1;
+      if (APP_LOAD_PENDING > 0 || APP_LOAD_MEASURED) return;
+      APP_LOAD_MEASURED = true;
+      var seconds = ((Date.now() - APP_LOAD_START) / 1000).toFixed(1);
+      var tag = document.querySelector('.version-tag');
+      if (tag) {
+        tag.textContent = 'v ' + APP_VERSION + ' · ' + seconds + 's';
+        tag.title = 'initial collage load: ' + seconds + ' seconds'
+          + (APP_LOAD_ERRORS ? ' · ' + APP_LOAD_ERRORS + ' image errors' : '');
+      }
+    };
+    images.forEach(function (img) {
+      if (img.complete) {
+        settle(img.naturalWidth > 0);
+      } else {
+        img.addEventListener('load', function () { settle(true); }, { once: true });
+        img.addEventListener('error', function () { settle(false); }, { once: true });
+      }
+    });
+  }
+  var ART_STYLE_ROTATION = [
+    'openai-watercolor',
+    'openai-ink',
+    'openai-paper-cut',
+    'openai-poster',
+    'openai-vintage',
+    'openai-gouache',
+    'openai-minimal'
+  ];
+  var ART_CUSTOM_STYLES = [];
+  var ART_STYLE_OPTIONS = [
+    { v: 'gemini', label: 'classic' },
+    { v: 'openai-watercolor', label: 'watercolor' },
+    { v: 'openai-ink', label: 'ink' },
+    { v: 'openai-paper-cut', label: 'paper cut' },
+    { v: 'openai-poster', label: 'poster' },
+    { v: 'openai-vintage', label: 'vintage' },
+    { v: 'openai-gouache', label: 'gouache' },
+    { v: 'openai-minimal', label: 'minimal' },
+    { v: 'daily', label: 'daily mix' },
+  ];
 
   function apiUrl(path) {
     return API_BASE + String(path).replace(/^\/+/, '');
+  }
+
+  function normalizeArtStyle(v) {
+    v = String(v || 'gemini').toLowerCase();
+    if (ART_STYLE_OPTIONS.some(function (o) { return o.v === v; })) return v;
+    if (/^openai-custom-[a-z0-9-]{1,48}$/.test(v)) return v;
+    return 'gemini';
+  }
+
+  function parseCustomArtStyles(raw) {
+    var rows = [];
+    try { rows = JSON.parse(raw || '[]') || []; } catch (e) { rows = []; }
+    return rows.filter(function (r) {
+      return r && /^openai-custom-[a-z0-9-]{1,48}$/.test(String(r.id || '')) && String(r.prompt || '').trim();
+    }).map(function (r) {
+      return {
+        id: String(r.id),
+        label: String(r.label || 'custom').slice(0, 40),
+        prompt: String(r.prompt || '').slice(0, 260)
+      };
+    });
+  }
+
+  function artStyleOptions() {
+    var daily = ART_STYLE_OPTIONS[ART_STYLE_OPTIONS.length - 1];
+    var base = ART_STYLE_OPTIONS.slice(0, -1);
+    var custom = ART_CUSTOM_STYLES.map(function (r) {
+      return { v: r.id, label: 'custom: ' + r.label };
+    });
+    return base.concat(custom).concat([daily]);
+  }
+
+  function customStyleHash(text) {
+    var h = 2166136261;
+    for (var i = 0; i < text.length; i += 1) {
+      h ^= text.charCodeAt(i);
+      h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+    }
+    return (h >>> 0).toString(36);
+  }
+
+  function customStyleLabel(text) {
+    return String(text || '').trim().replace(/\s+/g, ' ').slice(0, 34) || 'custom';
+  }
+
+  function customStyleId(text) {
+    var label = customStyleLabel(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'style';
+    return 'openai-custom-' + label + '-' + customStyleHash(String(text || '').trim()).slice(0, 8);
+  }
+
+  function uniqueCustomStyleId(text) {
+    var base = customStyleId(text);
+    var id = base;
+    var n = 2;
+    while (ART_CUSTOM_STYLES.some(function (r) { return r.id === id; })) {
+      id = base.slice(0, 46) + '-' + n;
+      n += 1;
+    }
+    return id;
+  }
+
+  function activeArtStyle() {
+    if (ART_STYLE !== 'daily') return ART_STYLE;
+    return ART_STYLE_ROTATION[new Date().getDay() % ART_STYLE_ROTATION.length];
+  }
+
+  var THEME_CATALOG = [];
+  var themeCatalogLoading = false;
+
+  function artStyleLabel(key) {
+    var match = artStyleOptions().find(function (o) { return o.v === key; });
+    return match ? match.label : 'classic';
+  }
+
+  function currentThemeLabel() {
+    if (ART_STYLE !== 'daily') return artStyleLabel(ART_STYLE);
+    return 'daily mix · ' + artStyleLabel(activeArtStyle());
+  }
+
+  function updateThemeToggle() {
+    var toggle = document.getElementById('themeToggle');
+    var name = document.getElementById('themeName');
+    if (name) name.textContent = currentThemeLabel();
+    if (toggle) toggle.title = 'theme: ' + currentThemeLabel();
+  }
+
+  function closeThemePicker() {
+    var toggle = document.getElementById('themeToggle');
+    var picker = document.getElementById('themePicker');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    if (picker) picker.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderThemeOptions() {
+    var el = document.getElementById('themeOptions');
+    if (!el) return;
+    if (!THEME_CATALOG.length) {
+      el.innerHTML = '<p class="theme-empty">no artwork themes are ready yet</p>';
+      return;
+    }
+    el.innerHTML = THEME_CATALOG.map(function (theme) {
+      var key = String(theme.key || 'gemini');
+      var active = key === ART_STYLE || (ART_STYLE === 'daily' && key === activeArtStyle());
+      var coverage = Math.max(0, +theme.detected_coverage || 0);
+      return '<button type="button" class="theme-option" data-theme-key="' + attrEsc(key) + '" aria-pressed="' + (active ? 'true' : 'false') + '">'
+        + '<strong>' + adminEsc(theme.label || artStyleLabel(key)) + '</strong>'
+        + '<small>' + coverage + ' detected birds ready</small>'
+        + '</button>';
+    }).join('');
+  }
+
+  function loadThemeCatalog() {
+    if (themeCatalogLoading) return Promise.resolve();
+    themeCatalogLoading = true;
+    return fetch(apiUrl('artwork-api.php?action=themes'), { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('theme list unavailable')); })
+      .then(function (j) {
+        THEME_CATALOG = Array.isArray(j.themes) ? j.themes : [];
+        renderThemeOptions();
+      })
+      .catch(function () {
+        THEME_CATALOG = [];
+        renderThemeOptions();
+      })
+      .finally(function () { themeCatalogLoading = false; });
+  }
+
+  function chooseTheme(key) {
+    key = normalizeArtStyle(key);
+    if (key === ART_STYLE) { closeThemePicker(); return; }
+    var picker = document.getElementById('themePicker');
+    if (picker) picker.setAttribute('data-saving', 'true');
+    fetch(apiUrl('config.php'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ AV_ART_STYLE: key })
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok && j.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.j.error || 'could not save theme');
+        ART_STYLE = key;
+        ART_STYLE_CACHE_BUSTER = String(Date.now());
+        updateThemeToggle();
+        renderThemeOptions();
+        renderCollageFromData();
+        renderTimeIndependent();
+        closeThemePicker();
+      })
+      .catch(function () {
+        if (picker) picker.setAttribute('data-error', 'true');
+      })
+      .finally(function () {
+        if (picker) picker.removeAttribute('data-saving');
+      });
+  }
+
+  function wireThemePicker() {
+    var toggle = document.getElementById('themeToggle');
+    var picker = document.getElementById('themePicker');
+    var close = document.getElementById('themePickerClose');
+    var options = document.getElementById('themeOptions');
+    if (!toggle || !picker || !options) return;
+    updateThemeToggle();
+    toggle.addEventListener('click', function () {
+      var open = picker.getAttribute('aria-hidden') === 'false';
+      if (open) { closeThemePicker(); return; }
+      picker.removeAttribute('data-error');
+      picker.setAttribute('aria-hidden', 'false');
+      toggle.setAttribute('aria-expanded', 'true');
+      loadThemeCatalog();
+    });
+    if (close) close.addEventListener('click', closeThemePicker);
+    options.addEventListener('click', function (ev) {
+      var choice = ev.target.closest && ev.target.closest('[data-theme-key]');
+      if (choice) chooseTheme(choice.dataset.themeKey);
+    });
+    document.addEventListener('click', function (ev) {
+      if (picker.getAttribute('aria-hidden') === 'false' && !picker.contains(ev.target) && !toggle.contains(ev.target)) closeThemePicker();
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && picker.getAttribute('aria-hidden') === 'false') closeThemePicker();
+    });
+  }
+
+  function birdImageUrl(sci, com, pose, version, thumb) {
+    var url = apiUrl('cutout.php?sci=' + encodeURIComponent(sci));
+    if (com) url += '&com=' + encodeURIComponent(com);
+    if ((+pose || 1) > 1) url += '&pose=' + (+pose || 1);
+    if (thumb) url += '&thumb=1';
+    var style = activeArtStyle();
+    if (style && style !== 'gemini') url += '&style=' + encodeURIComponent(style);
+    var cacheVersion = String(version || IMG_VERSION) + '-' + ART_STYLE_CACHE_BUSTER;
+    return url + '&v=' + encodeURIComponent(cacheVersion);
   }
 
   function wallTimeToSiteMs(value) {
@@ -404,6 +657,7 @@
 
   var collage = document.getElementById('collage');
   var nightToggle = document.getElementById('nightToggle');
+  wireThemePicker();
   var nightCollageOn = false;
   var nightSwapTimer = null;
   var collageFadeNext = false;
@@ -814,10 +1068,7 @@
       // common name in its prompt for a freshly-detected species.
       // &v=IMG_VERSION busts CF edge cache when we re-render any species.
       var pose = collagePose(s.sci);
-      var img = apiUrl('cutout.php?sci=' + encodeURIComponent(s.sci)) +
-        (s.com ? '&com=' + encodeURIComponent(s.com) : '') +
-        (pose > 1 ? '&pose=' + pose : '') +
-        '&v=' + IMG_VERSION;
+      var img = birdImageUrl(s.sci, s.com, pose, IMG_VERSION, true);
       var btn = document.createElement('button');
       btn.className = 'gtile';
       btn.type = 'button';
@@ -840,10 +1091,13 @@
         : '';
       var seasonBadge = isSeasonFirstInWindow(s.sci) ? seasonFirstBadgeHtml(true) : '';
       var visualBadge = visualBadgeHtml(visualSeenFor(s.sci, s.com));
-      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">' + badge + seasonBadge + visualBadge;
+      // Collage is the first screen, so its visible art should begin loading
+      // immediately. Atlas and Stats remain lazy-loaded below.
+      btn.innerHTML = '<img loading="eager" decoding="async" src="' + img + '" alt="' + s.com + '">' + badge + seasonBadge + visualBadge;
       r.el = btn;
       collage.appendChild(btn);
     });
+    measureInitialCollageLoad(collage);
     // Hover pill - created once per render so collage.innerHTML='' at
     // the top of this function doesn't strand a stale node. mousemove
     // populates its text from hit.data so the count is whatever the
@@ -1493,7 +1747,7 @@
       }).join('');
       var arrival = s.arrival_week == null ? '' : '<i class="stats-season-arrival" title="arrival around ' + seasonWeekLabel(+s.arrival_week) + '" style="left:' + (((+s.arrival_week + 0.5) / 52) * 100).toFixed(2) + '%"></i>';
       var departure = s.departure_week == null ? '' : '<i class="stats-season-departure" title="departure around ' + seasonWeekLabel(+s.departure_week) + '" style="left:' + (((+s.departure_week + 0.5) / 52) * 100).toFixed(2) + '%"></i>';
-      var img = apiUrl('cutout.php?sci=' + encodeURIComponent(s.sci)) + (s.com ? '&com=' + encodeURIComponent(s.com) : '') + '&v=' + IMG_VERSION;
+      var img = birdImageUrl(s.sci, s.com, 1, IMG_VERSION, true);
       return ''
         + '<div class="stats-season-row" data-sci="' + s.sci + '">'
         +   '<div class="stats-season-bird">'
@@ -2036,9 +2290,9 @@
       var lastHeard = lastSeen
         ? '<div class="last-heard">last heard ' + fmtDateLine(lastParts[0], lastParts[1]) + '</div>'
         : '';
-      var sketchSrc = apiUrl('cutout.php?sci=' + encodeURIComponent(s.sci)) +
-        (s.com ? '&com=' + encodeURIComponent(s.com) : '') +
-        '&v=' + SKETCH_VERSION;
+      // Atlas is a scan-heavy grid, so use the compact cached artwork here.
+      // The detail modal still resolves the full image through sketchSrc().
+      var sketchSrc = birdImageUrl(s.sci, s.com, 1, SKETCH_VERSION, true);
       var audioSrc = publicMirror
         ? (publicAudio ? apiUrl('recording.php?sci=' + encodeURIComponent(s.sci) + '&v=' + audioVersion) : '')
         : apiUrl('recording.php?sci=' + encodeURIComponent(s.sci));
@@ -2251,17 +2505,31 @@
   function refreshAll() {
     var forHours = currentHours;
     var nightCollageHours = 168;
-    return Promise.all([
+    // The collage only needs the live window and night/visual overlays. Keep
+    // the first paint independent from the slower historical reports.
+    var live = Promise.all([
+      fetchJson(apiUrl('birdnet-api.php?action=recent&hours=' + forHours)).catch(function () { return null; }),
+      fetchJson(nightApiUrl(forHours, 6)).catch(function () { return null; }),
+      fetchJson(nightApiUrl(nightCollageHours, 6)).catch(function () { return null; }),
+      fetchJson(apiUrl('birdfy-api.php?action=visual_summary&hours=' + forHours)).catch(function () { return null; }),
+    ]).then(function (parts) {
+      if (forHours !== currentHours) return;
+      DATA.recent = parts[0] || DATA.recent;
+      applyNightWindowFromResponse(parts[1] || parts[2]);
+      DATA.overnight = parts[1] || { species: [], hours: forHours, as_of: Date.now(), error: true };
+      DATA.nightCollage = parts[2] || DATA.overnight;
+      DATA.visual = parts[3] || DATA.visual;
+      recomputeDerived();
+      renderCollageFromData();
+    });
+
+    var historical = Promise.all([
       fetchJson(apiUrl('birdnet-api.php?action=stats')).catch(function () { return null; }),
       fetchCachedData('lifelist', apiUrl('birdnet-api.php?action=lifelist'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
       fetchCachedData('timeseries', apiUrl('birdnet-api.php?action=timeseries&days=30'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
       fetchCachedData('seasonality', apiUrl('birdnet-api.php?action=seasonality&limit=80'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
       fetchCachedData('firstseen', apiUrl('birdnet-api.php?action=firstseen&limit=10'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
       fetchCachedData('seasonfirst', apiUrl('birdnet-api.php?action=seasonfirst&limit=100'), SLOW_DATA_TTL_MS).catch(function () { return null; }),
-      fetchJson(apiUrl('birdnet-api.php?action=recent&hours=' + forHours)).catch(function () { return null; }),
-      fetchJson(nightApiUrl(forHours, 6)).catch(function () { return null; }),
-      fetchJson(nightApiUrl(nightCollageHours, 6)).catch(function () { return null; }),
-      fetchJson(apiUrl('birdfy-api.php?action=visual_summary&hours=' + forHours)).catch(function () { return null; }),
     ]).then(function (parts) {
       DATA.stats = parts[0];
       DATA.lifelist = parts[1];
@@ -2269,18 +2537,12 @@
       DATA.seasonality = parts[3];
       DATA.firstseen = parts[4];
       DATA.seasonfirst = parts[5];
-      // Only accept the recent slice if the window hasn't changed
-      // since this poll started - otherwise keep what's there.
-      if (forHours === currentHours && parts[6]) DATA.recent = parts[6];
-      applyNightWindowFromResponse(parts[7] || parts[8]);
-      if (forHours === currentHours) DATA.overnight = parts[7] || { species: [], hours: forHours, as_of: Date.now(), error: true };
-      DATA.nightCollage = parts[8] || DATA.overnight;
-      if (forHours === currentHours) DATA.visual = parts[9] || DATA.visual;
       recomputeDerived();
       renderTimeIndependent();
-      renderCollageFromData();
       refreshEbirdNearby();
     });
+
+    return Promise.all([live, historical]);
   }
 
   // Kick off the initial fetch. Renders pull from DATA as soon as it
@@ -2299,6 +2561,16 @@
       .then(function (cfg) {
         var v = cfg.values || {};
         setDisplayRefreshSeconds(v.AV_DISPLAY_REFRESH_SECONDS || 30);
+        ART_CUSTOM_STYLES = parseCustomArtStyles(v.AV_ART_CUSTOM_STYLES || '[]');
+        var nextStyle = normalizeArtStyle(v.AV_ART_STYLE || 'gemini');
+        if (nextStyle !== ART_STYLE) {
+          ART_STYLE = nextStyle;
+          ART_STYLE_CACHE_BUSTER = String(Date.now());
+          renderCollageFromData();
+          renderTimeIndependent();
+        }
+        updateThemeToggle();
+        loadThemeCatalog();
       })
       .catch(function () {});
   }
@@ -2434,7 +2706,43 @@
       // real time. No separate toggle.
       + '<canvas class="live-spectro" id="liveSpectro" width="600" height="120" aria-label="live spectrogram"></canvas>'
       + '<div class="live-status" id="liveStatus"></div>'
+      + '<button type="button" class="app-refresh-btn" id="appRefreshBtn" title="reload the latest app files">'
+      + '  <span aria-hidden="true">↻</span><span>refresh app</span>'
+      + '</button>'
+      + '<button type="button" class="app-refresh-btn app-restart-btn" id="restartPiBtn" title="restart this BirdNET Pi">'
+      + '  <span aria-hidden="true">!</span><span>restart Pi</span>'
+      + '</button>'
       + '<div class="menu-links">' + linksHtml + '</div>';
+
+    var appRefreshBtn = document.getElementById('appRefreshBtn');
+    if (appRefreshBtn) appRefreshBtn.addEventListener('click', function () {
+      var next = new URL(window.location.href);
+      next.searchParams.set('app_refresh', String(Date.now()));
+      window.location.replace(next.toString());
+    });
+
+    var restartPiBtn = document.getElementById('restartPiBtn');
+    if (restartPiBtn) restartPiBtn.addEventListener('click', function () {
+      if (!window.confirm('Restart the Pi now? Bird detection will pause briefly while it starts back up.')) return;
+      restartPiBtn.disabled = true;
+      restartPiBtn.lastElementChild.textContent = 'restarting Pi...';
+      fetch(apiUrl('restart-pi.php'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ confirm: 'restart' })
+      })
+        .then(function (r) { return r.ok ? r.json() : r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || ('HTTP ' + r.status)); }); })
+        .then(function (j) {
+          if (!j.ok) throw new Error(j.error || 'restart could not be scheduled');
+          setStatus('restarting Pi - it should be back in about a minute.', false);
+        })
+        .catch(function (e) {
+          restartPiBtn.disabled = false;
+          restartPiBtn.lastElementChild.textContent = 'restart Pi';
+          setStatus(e.message || 'restart failed', true);
+        });
+    });
 
     // Live audio + realtime spectrogram. The audio element and the
     // FFT analyser share one AudioContext; once .play() is called the
@@ -2601,6 +2909,8 @@
         var v = cfg.values || {};
         var preserve = cfg.preserve;
         setNightHours(v.AV_NIGHT_START, v.AV_NIGHT_END);
+        ART_CUSTOM_STYLES = parseCustomArtStyles(v.AV_ART_CUSTOM_STYLES || '[]');
+        ART_STYLE = normalizeArtStyle(v.AV_ART_STYLE || 'gemini');
         var html = ''
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
           + settingsSlider('CONFIDENCE',  'Confidence threshold', 'min score to log a detection', v.CONFIDENCE,  0.1, 0.95, 0.05, 2)
@@ -2622,6 +2932,9 @@
             ])
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'used for nearby reports; never shown after save', v.EBIRD_API_KEY)
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'used to generate missing bird artwork; never shown after save', v.GEMINI_API_KEY)
+          + settingsSecret('OPENAI_API_KEY', 'OpenAI API key', 'used to generate alternate bird artwork; never shown after save', v.OPENAI_API_KEY)
+          + settingsSelect('AV_ART_STYLE', 'Bird art style', 'which local illustration set to display', normalizeArtStyle(v.AV_ART_STYLE || 'gemini'), artStyleOptions())
+          + settingsCustomArtStyles()
           + settingsText('EBIRD_REGION', 'eBird region', 'US states can be entered as MO; saved as US-MO', v.EBIRD_REGION || '')
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
@@ -2672,7 +2985,7 @@
     var masked = state.masked || '';
     var emptyPlaceholder = key === 'EBIRD_API_KEY'
       ? 'paste eBird API key'
-      : (key === 'GEMINI_API_KEY' ? 'paste Gemini API key' : 'enter value');
+      : (key === 'GEMINI_API_KEY' ? 'paste Gemini API key' : (key === 'OPENAI_API_KEY' ? 'paste OpenAI API key' : 'enter value'));
     return ''
       + '<div class="secret-row" data-secret-key="' + key + '">'
       + '  <div class="head">'
@@ -2714,6 +3027,67 @@
       + '  </div>'
       + '  <select class="hour-select" data-key="' + key + '">' + opts.join('') + '</select>'
       + '</div>';
+  }
+
+  function settingsSelect(key, label, hint, val, opts) {
+    var options = opts.map(function (o) {
+      return '<option value="' + attrEsc(o.v) + '"' + (o.v === val ? ' selected' : '') + '>' + attrEsc(o.label) + '</option>';
+    }).join('');
+    return ''
+      + '<div class="menu-row select-row">'
+      + '  <div><span class="label">' + label + '</span>'
+      +     (hint ? '<span class="hint">' + hint + '</span>' : '')
+      + '  </div>'
+      + '  <select class="setting-select" data-key="' + key + '">' + options + '</select>'
+      + '</div>';
+  }
+
+  function settingsCustomArtStyles() {
+    var chips = ART_CUSTOM_STYLES.length
+      ? ART_CUSTOM_STYLES.map(function (r) {
+          return '<span class="custom-style-chip" data-custom-style-id="' + attrEsc(r.id) + '">'
+            + '<button type="button" class="custom-style-select" data-custom-style-select="' + attrEsc(r.id) + '" title="use this style">'
+            + '<strong>' + attrEsc(r.label) + '</strong><small>' + attrEsc(r.prompt) + '</small></button>'
+            + '<button type="button" class="custom-style-delete" data-custom-style-delete="' + attrEsc(r.id) + '" title="delete this custom style" aria-label="delete ' + attrEsc(r.label) + '">x</button>'
+            + '</span>';
+        }).join('')
+      : '<span class="hint">no custom styles yet</span>';
+    return ''
+      + '<div class="secret-row custom-art-row">'
+      + '  <div class="head">'
+      + '    <div class="label-block"><span class="label">Add custom OpenAI style</span>'
+      + '      <span class="hint">example: make the birds look like Transformers</span>'
+      + '    </div>'
+      + '  </div>'
+      + '  <div class="secret-control custom-art-control">'
+      + '    <input id="customArtStyleInput" type="text" maxlength="260" autocomplete="off" spellcheck="true" placeholder="describe a new style">'
+      + '    <button id="customArtStyleAdd" type="button">add</button>'
+      + '  </div>'
+      + '  <div class="custom-style-list" id="customArtStyleList">' + chips + '</div>'
+      + '</div>';
+  }
+
+  function updateArtStyleSelect(scope, selected) {
+    var sel = (scope || document).querySelector('select.setting-select[data-key="AV_ART_STYLE"]');
+    if (!sel) return;
+    sel.innerHTML = artStyleOptions().map(function (o) {
+      return '<option value="' + attrEsc(o.v) + '"' + (o.v === selected ? ' selected' : '') + '>' + attrEsc(o.label) + '</option>';
+    }).join('');
+    sel.value = selected;
+  }
+
+  function updateCustomStyleList(scope) {
+    var list = (scope || document).querySelector('#customArtStyleList');
+    if (!list) return;
+    list.innerHTML = ART_CUSTOM_STYLES.length
+      ? ART_CUSTOM_STYLES.map(function (r) {
+          return '<span class="custom-style-chip" data-custom-style-id="' + attrEsc(r.id) + '">'
+            + '<button type="button" class="custom-style-select" data-custom-style-select="' + attrEsc(r.id) + '" title="use this style">'
+            + '<strong>' + attrEsc(r.label) + '</strong><small>' + attrEsc(r.prompt) + '</small></button>'
+            + '<button type="button" class="custom-style-delete" data-custom-style-delete="' + attrEsc(r.id) + '" title="delete this custom style" aria-label="delete ' + attrEsc(r.label) + '">x</button>'
+            + '</span>';
+        }).join('')
+      : '<span class="hint">no custom styles yet</span>';
   }
 
   function settingsSegmented(key, label, hint, val, opts) {
@@ -2782,6 +3156,58 @@
         setSaveState('change pending');
       });
     });
+    scope.querySelectorAll('select.setting-select').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        pending[sel.dataset.key] = sel.value;
+        setSaveState('change pending');
+      });
+    });
+    var customAdd = scope.querySelector('#customArtStyleAdd');
+    var customInput = scope.querySelector('#customArtStyleInput');
+    if (customAdd && customInput) {
+      customAdd.addEventListener('click', function () {
+        var prompt = customInput.value.trim();
+        if (!prompt) return;
+        var existing = ART_CUSTOM_STYLES.find(function (r) { return r.prompt === prompt; });
+        var id = existing ? existing.id : uniqueCustomStyleId(prompt);
+        if (!existing) ART_CUSTOM_STYLES.push({ id: id, label: customStyleLabel(prompt), prompt: prompt });
+        ART_STYLE = id;
+        pending.AV_ART_CUSTOM_STYLES = JSON.stringify(ART_CUSTOM_STYLES);
+        pending.AV_ART_STYLE = id;
+        customInput.value = '';
+        updateArtStyleSelect(scope, id);
+        updateCustomStyleList(scope);
+        setSaveState('custom style pending');
+      });
+    }
+    var customList = scope.querySelector('#customArtStyleList');
+    if (customList) {
+      customList.addEventListener('click', function (ev) {
+        var selectBtn = ev.target.closest('[data-custom-style-select]');
+        if (selectBtn) {
+          var selectedId = selectBtn.dataset.customStyleSelect;
+          ART_STYLE = selectedId;
+          pending.AV_ART_STYLE = selectedId;
+          updateArtStyleSelect(scope, selectedId);
+          setSaveState('custom style selected');
+          return;
+        }
+        var deleteBtn = ev.target.closest('[data-custom-style-delete]');
+        if (!deleteBtn) return;
+        var deleteId = deleteBtn.dataset.customStyleDelete;
+        var deleted = ART_CUSTOM_STYLES.find(function (r) { return r.id === deleteId; });
+        if (!deleted || !confirm('Delete the custom style "' + deleted.label + '"?')) return;
+        ART_CUSTOM_STYLES = ART_CUSTOM_STYLES.filter(function (r) { return r.id !== deleteId; });
+        if (ART_STYLE === deleteId) {
+          ART_STYLE = 'gemini';
+          pending.AV_ART_STYLE = 'gemini';
+          updateArtStyleSelect(scope, 'gemini');
+        }
+        pending.AV_ART_CUSTOM_STYLES = JSON.stringify(ART_CUSTOM_STYLES);
+        updateCustomStyleList(scope);
+        setSaveState('custom style removed');
+      });
+    }
     scope.querySelectorAll('.seg').forEach(function (seg) {
       seg.querySelectorAll('button').forEach(function (b) {
         b.addEventListener('click', function () {
@@ -2797,9 +3223,11 @@
     if (Object.keys(pending).length === 0) return;
     var nightChanged = Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_START') || Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_END');
     var refreshChanged = Object.prototype.hasOwnProperty.call(pending, 'AV_DISPLAY_REFRESH_SECONDS');
+    var artChanged = Object.prototype.hasOwnProperty.call(pending, 'AV_ART_STYLE');
     var nextNightStart = Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_START') ? pending.AV_NIGHT_START : nightStartHour;
     var nextNightEnd = Object.prototype.hasOwnProperty.call(pending, 'AV_NIGHT_END') ? pending.AV_NIGHT_END : nightEndHour;
     var nextRefreshSeconds = refreshChanged ? pending.AV_DISPLAY_REFRESH_SECONDS : null;
+    var nextArtStyle = artChanged ? normalizeArtStyle(pending.AV_ART_STYLE) : ART_STYLE;
     var body = JSON.stringify(pending);
     setSaveState('saving...');
     fetch(apiUrl('config.php'), {
@@ -2817,6 +3245,14 @@
             refreshRecent();
           }
           if (refreshChanged) setDisplayRefreshSeconds(nextRefreshSeconds);
+          if (artChanged) {
+            ART_STYLE = nextArtStyle;
+            ART_STYLE_CACHE_BUSTER = String(Date.now());
+            renderCollageFromData();
+            renderTimeIndependent();
+            updateThemeToggle();
+            loadThemeCatalog();
+          }
           pending = {};
           setSaveState('saved ✓', 'ok');
           if (document.body.classList.contains('admin-on') && adminSect === 'settings') {
@@ -3031,11 +3467,8 @@
     var sp = ((DATA.lifelist && DATA.lifelist.species) || [])
       .find(function (s) { return s.sci === sci; });
     var com = sp ? (sp.com || '') : '';
-    var base = apiUrl('cutout.php?sci=' + encodeURIComponent(sci)) +
-      (com ? '&com=' + encodeURIComponent(com) : '') +
-      '&v=' + SKETCH_VERSION;
     var n = +pose || 1;
-    return n > 1 ? base + '&pose=' + n : base;
+    return birdImageUrl(sci, com, n, SKETCH_VERSION, true);
   }
   function openDetailModal(sci) {
     if (!sci) return;
@@ -3403,6 +3836,8 @@
         var v = cfg.values || {};
         var preserve = cfg.preserve;
         setNightHours(v.AV_NIGHT_START, v.AV_NIGHT_END);
+        ART_CUSTOM_STYLES = parseCustomArtStyles(v.AV_ART_CUSTOM_STYLES || '[]');
+        ART_STYLE = normalizeArtStyle(v.AV_ART_STYLE || 'gemini');
         adminBody.innerHTML =
           '<div class="admin-settings">'
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
@@ -3425,6 +3860,9 @@
             ])
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'used for nearby reports; never shown after save', v.EBIRD_API_KEY)
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'used to generate missing bird artwork; never shown after save', v.GEMINI_API_KEY)
+          + settingsSecret('OPENAI_API_KEY', 'OpenAI API key', 'used to generate alternate bird artwork; never shown after save', v.OPENAI_API_KEY)
+          + settingsSelect('AV_ART_STYLE', 'Bird art style', 'which local illustration set to display', normalizeArtStyle(v.AV_ART_STYLE || 'gemini'), artStyleOptions())
+          + settingsCustomArtStyles()
           + settingsText('EBIRD_REGION', 'eBird region', 'US states can be entered as MO; saved as US-MO', v.EBIRD_REGION || '')
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
@@ -3953,10 +4391,46 @@
     if (!j.ok && j.error) {
       return '<div class="out err">' + adminEsc(j.error) + '</div>';
     }
+    if (j.sample) {
+      var s = j.sample || {};
+      return ''
+        + '<div class="artwork-sample">'
+        + '  <img src="' + adminEsc(s.image_data || '') + '" alt="">'
+        + '  <div>'
+        + '    <strong>' + adminEsc(s.com || s.sci || 'sample bird') + '</strong>'
+        + '    <span>' + adminEsc(s.art_style_label || s.art_style || 'selected style') + '</span>'
+        + '    <em>' + adminEsc(s.provider || '') + ' sample · not added to the full artwork set</em>'
+        + '  </div>'
+        + '</div>';
+    }
     var configured = j.configured || {};
     var job = j.job || {};
     var running = job.running ? 'running' : 'idle';
     var region = j.region || j.region_code || '-';
+    var styleLabel = j.art_style_label || j.art_style || 'classic Gemini';
+    var provider = j.provider || 'gemini';
+    var progress = job.progress || {};
+    var progressHtml = '';
+    if (progress && progress.total != null && (+progress.total || 0) > 0) {
+      var total = +progress.total || 0;
+      var current = Math.min(total, +progress.current || 0);
+      var pct = Math.max(0, Math.min(100, +progress.percent || (total ? (current / total) * 100 : 0)));
+      var state = progress.state_label || progress.state || 'working';
+      var currentName = progress.com || progress.sci || progress.file || '';
+      var scopeBits = [progress.scope_label, progress.pose_label].filter(Boolean).join(' · ');
+      var detail = currentName
+        ? ('working on ' + current + ' of ' + total + ' · ' + currentName + (progress.file ? ' · ' + progress.file : ''))
+        : ('working on ' + current + ' of ' + total);
+      progressHtml = ''
+        + '<div class="artwork-progress" data-state="' + adminEsc(progress.state || 'idle') + '">'
+        + '  <div class="artwork-progress-head"><strong>' + adminEsc(state) + '</strong><span>' + adminEsc(Math.round(pct) + '%') + '</span></div>'
+        + '  <div class="artwork-progress-bar"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
+        + (scopeBits ? '  <div class="birdfy-note">' + adminEsc(scopeBits) + '</div>' : '')
+        + '  <div class="birdfy-note">' + adminEsc(detail) + '</div>'
+        + '  <div class="birdfy-note">generated ' + adminEsc(progress.generated || 0) + ' · skipped ' + adminEsc(progress.skipped || 0) + ' · failed ' + adminEsc(progress.failed || 0) + (progress.age_seconds != null ? ' · updated ' + adminEsc(Math.round(+progress.age_seconds || 0)) + 's ago' : '') + '</div>'
+        + (progress.message ? '<div class="birdfy-note">' + adminEsc(progress.message) + '</div>' : '')
+        + '</div>';
+    }
     if (j.missing_species != null) {
       var rows = (j.missing || []).slice(0, 12).map(function (r) {
         return '<li><strong>' + adminEsc(r.com || r.sci) + '</strong><span>' + adminEsc(r.sci || '') + ' · pose ' + adminEsc((r.missing_poses || []).join(', ')) + '</span></li>';
@@ -3964,6 +4438,9 @@
       return ''
         + '<div class="birdfy-status">'
         + '  <div><strong>' + adminEsc(region) + '</strong><span>region</span></div>'
+        + '  <div><strong>' + adminEsc(styleLabel) + '</strong><span>style</span></div>'
+        + '  <div><strong>' + adminEsc(j.scope_label || 'detected birds') + '</strong><span>scope</span></div>'
+        + '  <div><strong>' + adminEsc(j.pose_label || 'perched only') + '</strong><span>poses</span></div>'
         + '  <div><strong>' + adminEsc(j.missing_species) + '</strong><span>species missing</span></div>'
         + '  <div><strong>' + adminEsc(j.missing_images) + '</strong><span>images needed</span></div>'
         + '</div>'
@@ -3973,6 +4450,7 @@
     var cfgLabel = [
       configured.ebird_key ? 'eBird key set' : 'eBird key missing',
       configured.gemini_key ? 'Gemini key set' : 'Gemini key missing',
+      configured.openai_key ? 'OpenAI key set' : 'OpenAI key missing',
       configured.region ? 'region set' : 'region missing',
     ].join(' · ');
     var log = job.log_tail ? '<pre class="artwork-log">' + adminEsc(job.log_tail) + '</pre>' : '';
@@ -3980,9 +4458,11 @@
       + '<div class="birdfy-status">'
       + '  <div><strong>' + adminEsc(region) + '</strong><span>region</span></div>'
       + '  <div><strong>' + adminEsc(running) + '</strong><span>generator</span></div>'
-      + '  <div><strong>' + adminEsc(configured.gemini_key ? 'ready' : 'missing') + '</strong><span>Gemini</span></div>'
+      + '  <div><strong>' + adminEsc(styleLabel) + '</strong><span>style</span></div>'
+      + '  <div><strong>' + adminEsc(provider === 'openai' ? (configured.openai_key ? 'ready' : 'missing') : (configured.gemini_key ? 'ready' : 'missing')) + '</strong><span>' + adminEsc(provider) + '</span></div>'
       + '</div>'
       + '<div class="birdfy-note">' + adminEsc(cfgLabel) + '</div>'
+      + progressHtml
       + log;
   }
 
@@ -3991,15 +4471,44 @@
     if (!card) return;
     var out = card.querySelector('#artworkOut');
     var preview = card.querySelector('#artworkPreview');
+    var sample = card.querySelector('#artworkSample');
     var generate = card.querySelector('#artworkGenerate');
+    var generateDetected = card.querySelector('#artworkGenerateDetected');
+    var scope = card.querySelector('#artworkScope');
+    var poses = card.querySelector('#artworkPoses');
+    var pollTimer = null;
+    var artworkWasRunning = false;
+    function selection(overrides) {
+      var o = overrides || {};
+      return {
+        scope: o.scope || (scope ? scope.value : 'detected'),
+        poses: o.poses || (poses ? poses.value : 'perched'),
+      };
+    }
+    function query(action, overrides) {
+      var s = selection(overrides);
+      return 'artwork-api.php?action=' + encodeURIComponent(action)
+        + '&scope=' + encodeURIComponent(s.scope)
+        + '&poses=' + encodeURIComponent(s.poses);
+    }
     function setBusy(on) {
       if (preview) preview.disabled = !!on;
+      if (sample) sample.disabled = !!on;
       if (generate) generate.disabled = !!on;
+      if (generateDetected) generateDetected.disabled = !!on;
+      if (scope) scope.disabled = !!on;
+      if (poses) poses.disabled = !!on;
     }
-    function request(action, opts) {
+    function schedulePoll(j) {
+      if (pollTimer) clearTimeout(pollTimer);
+      var progress = j && j.job && j.job.progress ? j.job.progress : null;
+      var active = (j && j.job && j.job.running) || (progress && (progress.state === 'running' || progress.state === 'stalled'));
+      if (active) pollTimer = setTimeout(loadStatus, 3500);
+    }
+    function request(action, opts, overrides) {
       setBusy(true);
-      if (out) out.innerHTML = '<div class="purge-loading">' + (action === 'generate' ? 'starting Gemini artwork job...' : 'checking regional artwork...') + '</div>';
-      return fetch(apiUrl('artwork-api.php?action=' + action), Object.assign({
+      if (out) out.innerHTML = '<div class="purge-loading">' + (action === 'generate' ? 'starting artwork job...' : (action === 'sample' ? 'generating one sample image...' : 'checking artwork...')) + '</div>';
+      return fetch(apiUrl(query(action, overrides)), Object.assign({
         credentials: 'same-origin',
         cache: 'no-store',
       }, opts || {}))
@@ -4008,7 +4517,7 @@
           var j = res.j || {};
           if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + (res.status || 'error')));
           if (out) out.innerHTML = renderArtworkStatus(j.preview || j)
-            + (j.started ? '<div class="out ok">Gemini artwork generation started.</div>' : '')
+            + (j.started ? '<div class="out ok">Artwork generation started.</div>' : '')
             + (j.message ? '<div class="birdfy-note">' + adminEsc(j.message) + '</div>' : '');
           if (j.started) setTimeout(loadStatus, 1600);
         })
@@ -4019,13 +4528,32 @@
       setBusy(true);
       fetch(apiUrl('artwork-api.php?action=status'), { credentials: 'same-origin', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
-        .then(function (j) { if (out) out.innerHTML = renderArtworkStatus(j); })
+        .then(function (j) {
+          var running = !!(j && j.job && j.job.running);
+          if (artworkWasRunning && !running) {
+            ART_STYLE_CACHE_BUSTER = String(Date.now());
+            renderCollageFromData();
+            renderTimeIndependent();
+          }
+          artworkWasRunning = running;
+          if (out) out.innerHTML = renderArtworkStatus(j);
+          schedulePoll(j);
+        })
         .catch(function (e) { if (out) out.innerHTML = '<div class="out err">' + adminEsc(e.message || 'artwork status failed') + '</div>'; })
         .finally(function () { setBusy(false); });
     }
     if (preview) preview.addEventListener('click', function () { request('preview'); });
+    if (sample) sample.addEventListener('click', function () {
+      if (!confirm('Generate one sample image for the selected style? This uses one image-generation API call.')) return;
+      request('sample', { method: 'POST' });
+    });
+    if (generateDetected) generateDetected.addEventListener('click', function () {
+      if (!confirm('Generate missing perched artwork for birds already detected here?')) return;
+      request('generate', { method: 'POST' }, { scope: 'detected', poses: 'perched' });
+    });
     if (generate) generate.addEventListener('click', function () {
-      if (!confirm('Start Gemini artwork generation for missing regional birds?')) return;
+      var s = selection();
+      if (!confirm('Start artwork generation for ' + s.scope + ' / ' + s.poses + ' in the selected style?')) return;
       request('generate', { method: 'POST' });
     });
     loadStatus();
@@ -4045,6 +4573,11 @@
     var gain = j.gain || {};
     var gainPct = gain.ok ? (+gain.percent || 0) : 0;
     var agc = gain.hardware_agc && gain.hardware_agc.ok ? ('hardware agc ' + (gain.hardware_agc.enabled ? 'on' : 'off')) : 'hardware agc unavailable';
+    var gainBits = [];
+    if (gain.card_name || gain.control) gainBits.push((gain.card_name || ('card ' + gain.card)) + ' · ' + (gain.control || 'capture'));
+    if (gain.db != null) gainBits.push((+gain.db).toFixed(1) + ' dB');
+    if (gain.limits && gain.limits.max != null) gainBits.push('steps ' + gain.limits.min + '-' + gain.limits.max);
+    gainBits.push(agc);
     var gainHtml = gain.ok
       ? '<div class="mic-gain-control">'
         + '  <div class="head"><span class="label">capture gain</span><span class="value" id="micGainValue">' + adminEsc(gainPct + '%') + '</span></div>'
@@ -4053,7 +4586,7 @@
         + '    <button id="micGainApply" type="button">apply gain</button>'
         + '    <button id="micGainAuto" type="button">auto</button>'
         + '  </div>'
-        + '  <div class="birdfy-note" id="micGainNote">' + adminEsc(agc + ' · ' + (gainPct >= 100 ? 'capture gain is already at maximum' : 'adjust, then apply')) + '</div>'
+        + '  <div class="birdfy-note" id="micGainNote">' + adminEsc(gainBits.join(' · ') + ' · ' + (gainPct >= 100 ? 'capture gain is already at maximum' : 'adjust, then apply')) + '</div>'
         + '</div>'
       : '<div class="out err">' + adminEsc(gain.error || 'capture gain unavailable') + '</div>';
     return ''
@@ -4109,7 +4642,7 @@
             .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
             .then(function (res) {
               if (!res.ok || !res.j.set_ok) throw new Error(res.j.error || 'gain update failed');
-              if (note) note.textContent = 'gain set to ' + (res.j.percent == null ? range.value : res.j.percent) + '%';
+              if (note) note.textContent = 'capture gain set to ' + (res.j.percent == null ? range.value : res.j.percent) + '%' + (res.j.db == null ? '' : ' · ' + (+res.j.db).toFixed(1) + ' dB');
               setTimeout(loadMicHealth, 900);
             })
             .catch(function (e) { if (note) note.textContent = e.message || 'gain update failed'; })
@@ -4257,11 +4790,29 @@
       + '<div id="birdfyOut" class="eval-out"><div class="purge-loading">loading Birdfy status...</div></div>'
       + '</div>';
     html += '<div class="admin-action artwork-tool" id="artworkTool">'
-      + '<h4>missing regional artwork</h4>'
-      + '<p>Finds eBird-region birds that are in the BirdNET model but do not have local illustrations, then starts the existing Gemini artwork generator.</p>'
+      + '<h4>missing bird artwork</h4>'
+      + '<p>Finds birds without local illustrations in the selected style. Default is the cheaper detected-birds, perched-only workflow.</p>'
       + '<div class="purge-controls eval-controls">'
+      + '  <label for="artworkScope">scope</label>'
+      + '  <select id="artworkScope">'
+      + '    <option value="detected" selected>detected birds</option>'
+      + '    <option value="top25">top 25 detected</option>'
+      + '    <option value="top100">top 100 detected</option>'
+      + '    <option value="regional">all regional birds</option>'
+      + '  </select>'
+      + '</div>'
+      + '<div class="purge-controls eval-controls">'
+      + '  <label for="artworkPoses">poses</label>'
+      + '  <select id="artworkPoses">'
+      + '    <option value="perched" selected>perched only</option>'
+      + '    <option value="both">perched + flight</option>'
+      + '  </select>'
+      + '</div>'
+      + '<div class="purge-controls eval-controls artwork-actions">'
       + '  <label>artwork</label>'
       + '  <button id="artworkPreview" type="button">preview</button>'
+      + '  <button id="artworkSample" type="button">sample</button>'
+      + '  <button id="artworkGenerateDetected" type="button">new detected</button>'
       + '  <button id="artworkGenerate" type="button">generate</button>'
       + '</div>'
       + '<div id="artworkOut" class="eval-out"><div class="purge-loading">loading artwork status...</div></div>'

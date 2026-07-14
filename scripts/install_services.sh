@@ -182,6 +182,8 @@ install_Caddyfile() {
   cat << EOF > /etc/caddy/Caddyfile
 http:// ${BIRDNETPI_URL} {
   root * ${EXTRACTED}
+  @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
+  header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
   handle /By_Date/* {
     file_server browse
@@ -218,6 +220,8 @@ EOF
     cat << EOF > /etc/caddy/Caddyfile
 http:// ${BIRDNETPI_URL} {
   root * ${EXTRACTED}
+  @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
+  header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
   handle /By_Date/* {
     file_server browse
@@ -377,6 +381,7 @@ caddy ALL=(root) NOPASSWD: \\
     /bin/systemctl restart livestream, \\
     /bin/systemctl restart icecast2, \\
     /bin/systemctl restart caddy, \\
+    /usr/bin/systemd-run --unit=avian-ui-reboot --on-active=5 /bin/systemctl reboot, \\
     /bin/journalctl -u birdnet_recording *, \\
     /bin/journalctl -u birdnet_analysis *, \\
     /bin/journalctl -u birdnet_log *, \\

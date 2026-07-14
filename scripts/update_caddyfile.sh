@@ -19,6 +19,8 @@ HASHWORD=$(caddy hash-password --plaintext ${CADDY_PWD})
 cat << EOF > /etc/caddy/Caddyfile
 http:// ${BIRDNETPI_URL} {
   root * ${EXTRACTED}
+  @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
+  header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
   handle /By_Date/* {
     file_server browse
@@ -61,6 +63,8 @@ else
   cat << EOF > /etc/caddy/Caddyfile
 http:// ${BIRDNETPI_URL} {
   root * ${EXTRACTED}
+  @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
+  header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
   handle /By_Date/* {
     file_server browse

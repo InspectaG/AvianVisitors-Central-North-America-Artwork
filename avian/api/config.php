@@ -44,7 +44,10 @@ $ALLOWED = [
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
     'EBIRD_API_KEY'      => ['type' => 'secret', 'maxlen' => 120],
     'GEMINI_API_KEY'     => ['type' => 'secret', 'maxlen' => 180],
+    'OPENAI_API_KEY'     => ['type' => 'secret', 'maxlen' => 220],
     'EBIRD_REGION'       => ['type' => 'region', 'maxlen' => 32],
+    'AV_ART_STYLE'       => ['type' => 'art_style', 'maxlen' => 80],
+    'AV_ART_CUSTOM_STYLES' => ['type' => 'json_text', 'maxlen' => 4000],
     'BIRDFY_ENABLED'     => ['type' => 'int',   'min' => 0,    'max' => 1],
     'BIRDFY_EMAIL'       => ['type' => 'secret_text', 'maxlen' => 180],
     'BIRDFY_PASSWORD'    => ['type' => 'secret_text', 'maxlen' => 220],
@@ -65,7 +68,7 @@ function read_conf(string $path): array {
         if (preg_match('/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i', $line, $m)) {
             $val = trim($m[2]);
             if (strlen($val) >= 2 && $val[0] === '"' && substr($val, -1) === '"') {
-                $val = substr($val, 1, -1);
+                $val = stripcslashes(substr($val, 1, -1));
             }
             $out[$m[1]] = $val;
         }
@@ -123,6 +126,15 @@ function safe_secret_text_value(string $v): bool {
     return $v === '' || (bool)preg_match('/^[\x20-\x7E]+$/', $v);
 }
 
+function safe_json_text_value(string $v): bool {
+    return $v === '' || (bool)preg_match('/^[\x20-\x7E]+$/', $v);
+}
+
+function safe_art_style_value(string $v): bool {
+    $allowed = ['gemini', 'openai-watercolor', 'openai-ink', 'openai-paper-cut', 'openai-poster', 'openai-vintage', 'openai-gouache', 'openai-minimal', 'daily'];
+    return in_array($v, $allowed, true) || (bool)preg_match('/^openai-custom-[a-z0-9-]{1,48}$/', $v);
+}
+
 function normalize_ebird_region(string $v): string {
     $v = strtoupper(trim($v));
     if ($v === '') return '';
@@ -159,7 +171,10 @@ if ($method === 'GET') {
         'BIRDFY_IMPORT_WINDOW_HOURS' => '24',
         'AV_DISPLAY_REFRESH_SECONDS' => '30',
         'GEMINI_API_KEY' => '',
+        'OPENAI_API_KEY' => '',
         'EBIRD_REGION' => '',
+        'AV_ART_STYLE' => 'gemini',
+        'AV_ART_CUSTOM_STYLES' => '[]',
     ];
     $out = [];
     foreach ($ALLOWED as $k => $spec) {
@@ -213,6 +228,16 @@ if ($method === 'POST') {
             if (strlen($v) > ($spec['maxlen'] ?? 200)) { $errors[$k] = 'too long'; continue; }
             if ($spec['type'] === 'secret' && !safe_secret_value($v)) { $errors[$k] = 'invalid characters'; continue; }
             if ($spec['type'] === 'secret_text' && !safe_secret_text_value($v)) { $errors[$k] = 'invalid characters'; continue; }
+        } elseif ($spec['type'] === 'json_text') {
+            $v = trim((string)$v);
+            if (strlen($v) > ($spec['maxlen'] ?? 4000)) { $errors[$k] = 'too long'; continue; }
+            if (!safe_json_text_value($v)) { $errors[$k] = 'invalid characters'; continue; }
+            $decoded = json_decode($v === '' ? '[]' : $v, true);
+            if (!is_array($decoded)) { $errors[$k] = 'invalid json'; continue; }
+        } elseif ($spec['type'] === 'art_style') {
+            $v = strtolower(trim((string)$v));
+            if (strlen($v) > ($spec['maxlen'] ?? 80)) { $errors[$k] = 'too long'; continue; }
+            if (!safe_art_style_value($v)) { $errors[$k] = 'invalid art style'; continue; }
         } elseif ($spec['type'] === 'region') {
             $v = normalize_ebird_region((string)$v);
             if (strlen($v) > ($spec['maxlen'] ?? 32)) { $errors[$k] = 'too long'; continue; }
