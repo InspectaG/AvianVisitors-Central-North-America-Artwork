@@ -19,7 +19,7 @@ remote="origin"
 # AvianVisitors fork: track our overlay branch by default so the
 # Sunday auto-update cron (when enabled) doesn't switch back to
 # upstream `main` and delete the avian/ directory.
-branch="avian-visitors"
+branch="publish/birdnet-central-north-america-updates"
 auto_update=""
 
 while getopts ":r:b:a" o; do
@@ -46,6 +46,11 @@ while getopts ":r:b:a" o; do
   esac
 done
 shift $((OPTIND-1))
+
+if [ -z "${auto_update}" ] && { [ -z "${AUTOMATIC_UPDATE}" ] || [ "${AUTOMATIC_UPDATE}" == 0 ]; }; then
+  echo "Updates are disabled in birdnet.conf; refusing to reset this custom AvianVisitors build."
+  exit 0
+fi
 
 sudo_with_user () {
   set -x

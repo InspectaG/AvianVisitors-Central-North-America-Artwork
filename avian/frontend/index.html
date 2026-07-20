@@ -7,10 +7,14 @@
 <meta name="description" content="A live bird collage from your window.">
 <link rel="icon" type="image/png" href="./favicon.png">
 <link rel="apple-touch-icon" href="./favicon.png">
-<!-- Apply the saved theme before first paint so dark mode doesn't flash
-     light on load. The full switcher lives in Settings (writes bird:theme). -->
-<script>try{if(localStorage.getItem('bird:theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
-<link rel="stylesheet" href="./styles.css">
+<script>
+  (function () {
+    try {
+      document.documentElement.dataset.uiTheme = localStorage.getItem('avian-ui-theme') === 'dark' ? 'dark' : 'light';
+    } catch (e) {}
+  }());
+</script>
+<link rel="stylesheet" href="./styles.css?v=20260718-v1.56">
 </head>
 <body class="av-local">
 <!-- Pill in the top-left slot, only visible on admin overlays
@@ -57,6 +61,23 @@
     <!-- ========== View 1 - Collage ========== -->
     <section class="view" id="v0" aria-label="Bird collage">
       <div class="gcollage" id="collage"></div>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-expanded="false" aria-controls="themePicker">
+        <span>theme</span><strong id="themeName">classic</strong>
+      </button>
+      <section class="theme-picker" id="themePicker" aria-hidden="true" aria-label="Choose bird art theme">
+        <div class="theme-picker-head"><strong>themes</strong><button type="button" id="themePickerClose" aria-label="close themes">x</button></div>
+        <div class="theme-options" id="themeOptions"></div>
+      </section>
+      <div class="recent-heard" id="recentHeard" aria-live="polite">
+        <span>most recently heard</span><strong id="recentHeardBird">waiting for a bird</strong><em id="recentHeardAge">--</em>
+      </div>
+      <div class="version-tag" aria-label="frontend version">v 1.56</div>
+      <button class="night-toggle" id="nightToggle" type="button" aria-pressed="false" aria-label="Show night visitors">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18.8 15.4A8.6 8.6 0 0 1 8.6 5.2 8.4 8.4 0 1 0 18.8 15.4Z"/>
+        </svg>
+        <span class="tip">night visitors</span>
+      </button>
     </section>
 
     <!-- ========== View 2 - Stats ========== -->
@@ -84,6 +105,11 @@
             <h3>First Detections</h3>
             <small>newest additions to the life list</small>
             <ol id="statsFirstSeen"></ol>
+          </div>
+          <div class="grp">
+            <h3>Season Firsts</h3>
+            <small id="statsSeasonFirstCap">first heard since Jan 1</small>
+            <ol id="statsSeasonFirst"></ol>
           </div>
         </aside>
       </div>
@@ -126,30 +152,37 @@
   <article class="modal-card">
     <button class="modal-close" type="button" aria-label="Close" data-close="1">×</button>
     <div class="modal-grid">
-      <div class="modal-img">
-        <img id="modalImg" src="" alt="" loading="eager">
-        <div class="pose-toggle" id="modalPoseToggle" role="tablist" aria-label="Pose">
-          <i class="seg-pill" aria-hidden="true"></i>
-          <button type="button" data-pose="1" aria-label="perched">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3.5 6.5 C 4 4, 6 3, 8 4 C 10 3.6, 11.6 4.6, 12 6.5 L 11.5 8 C 11 9.6, 9.4 10.4, 8 10.4 C 6.4 10.4, 4.8 9.6, 4.2 8 Z"/>
-              <circle cx="10.6" cy="5.7" r=".4" fill="currentColor"/>
-              <path d="M12 6.2 L 13.6 5.8"/>
-              <path d="M7.5 10.4 L 7.2 12.2"/>
-              <path d="M8.6 10.4 L 8.9 12.2"/>
-              <path d="M2 12.6 H 13"/>
-            </svg>
-            <span class="tip">perched</span>
-          </button>
-          <button type="button" data-pose="2" aria-label="in flight">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1.5 8 Q 4.5 4, 7.5 7.5 Q 11 4, 14.5 8"/>
-              <path d="M7.5 7.5 L 8 9.5"/>
-              <circle cx="8.5" cy="7.2" r=".4" fill="currentColor"/>
-              <path d="M8.6 7 L 10 6.6"/>
-            </svg>
-            <span class="tip">in flight</span>
-          </button>
+      <div class="modal-visual">
+        <div class="modal-img">
+          <img id="modalImg" src="" alt="" loading="eager">
+          <div class="pose-toggle" id="modalPoseToggle" role="tablist" aria-label="Pose">
+            <i class="seg-pill" aria-hidden="true"></i>
+            <button type="button" data-pose="1" aria-label="perched">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3.5 6.5 C 4 4, 6 3, 8 4 C 10 3.6, 11.6 4.6, 12 6.5 L 11.5 8 C 11 9.6, 9.4 10.4, 8 10.4 C 6.4 10.4, 4.8 9.6, 4.2 8 Z"/>
+                <circle cx="10.6" cy="5.7" r=".4" fill="currentColor"/>
+                <path d="M12 6.2 L 13.6 5.8"/>
+                <path d="M7.5 10.4 L 7.2 12.2"/>
+                <path d="M8.6 10.4 L 8.9 12.2"/>
+                <path d="M2 12.6 H 13"/>
+              </svg>
+              <span class="tip">perched</span>
+            </button>
+            <button type="button" data-pose="2" aria-label="in flight">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1.5 8 Q 4.5 4, 7.5 7.5 Q 11 4, 14.5 8"/>
+                <path d="M7.5 7.5 L 8 9.5"/>
+                <circle cx="8.5" cy="7.2" r=".4" fill="currentColor"/>
+                <path d="M8.6 7 L 10 6.6"/>
+              </svg>
+              <span class="tip">in flight</span>
+            </button>
+          </div>
+        </div>
+        <div class="modal-rarity-panel" id="modalRarityPanel">
+          <span class="k">rarity</span>
+          <strong id="modalRarity">-</strong>
+          <span class="v" id="modalRarityDetail">Based on your detections.</span>
         </div>
       </div>
       <div class="modal-info">
@@ -160,10 +193,29 @@
           <div id="modalWindowStat"><span class="n" id="modalWindow">-</span><span class="lbl" id="modalWindowLbl">window</span></div>
           <div><span class="n" id="modalFirstSeen">-</span><span class="lbl">first heard</span></div>
         </div>
+        <section class="modal-best-time" id="modalBestTime" aria-live="polite">
+          <div class="best-time-copy">
+            <span class="k">best time to see/hear</span>
+            <strong id="modalBestTimeLabel">-</strong>
+            <span class="v" id="modalBestTimeDetail">Loading detection pattern...</span>
+          </div>
+          <div class="best-time-clock" id="modalBestTimeClock" aria-hidden="true"></div>
+        </section>
+        <section class="modal-detection-calendar" id="modalDetectionCalendar" aria-live="polite">
+          <div class="detect-calendar-copy">
+            <span class="k">detection calendar</span>
+            <strong>-</strong>
+            <span class="v">Loading recent pattern...</span>
+          </div>
+        </section>
+        <section class="modal-ebird-nearby" id="modalEbirdNearby" aria-live="polite">
+          <span class="k">eBird nearby</span>
+          <strong id="modalEbirdNearbyLabel">Checking eBird...</strong>
+          <span class="v" id="modalEbirdNearbyDetail">Recent reports near your BirdNET location.</span>
+        </section>
         <p class="desc placeholder" id="modalDesc">Loading description...</p>
         <div class="modal-meta">
           <span class="meta-item"><span class="k">genus</span><span class="v" id="modalGenus">-</span></span>
-          <span class="meta-item"><span class="k">rarity</span><span class="v" id="modalRarity">-</span></span>
         </div>
       </div>
     </div>
@@ -213,6 +265,6 @@
   </div>
 </section>
 
-<script src="./apt.js"></script>
+<script src="./apt.js?v=20260718-v1.56"></script>
 </body>
 </html>

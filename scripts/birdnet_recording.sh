@@ -2,13 +2,49 @@
 # Performs the recording from the specified RTSP stream or soundcard
 source /etc/birdnet/birdnet.conf
 
+audio_filter_chain(){
+  if [ "${AV_AUDIO_FILTER:-0}" != "1" ];then
+    echo ""
+    return
+  fi
+  local hp="${AV_FILTER_HIGHPASS:-300}"
+  local lp="${AV_FILTER_LOWPASS:-10000}"
+  if ! [[ "$hp" =~ ^[0-9]+$ ]];then hp=300;fi
+  if ! [[ "$lp" =~ ^[0-9]+$ ]];then lp=10000;fi
+  if [ "$hp" -lt 20 ];then hp=20;fi
+  if [ "$hp" -gt 3000 ];then hp=3000;fi
+  if [ "$lp" -lt 1000 ];then lp=1000;fi
+  if [ "$lp" -gt 20000 ];then lp=20000;fi
+  if [ "$lp" -le "$hp" ];then lp=$((hp + 1000));fi
+  echo "highpass=f=${hp},lowpass=f=${lp}"
+}
+
 loop_ffmpeg(){
+  local filter
+  filter="$(audio_filter_chain)"
+  local filter_args=()
+  if [ -n "$filter" ];then
+    filter_args=(-af "$filter")
+  fi
   while true;do
-    if ! ffmpeg -hide_banner -loglevel $LOGGING_LEVEL -nostdin ${1} -i ${2} -vn -map a:0 -acodec pcm_s16le -ac 2 -ar 48000 -f segment -segment_format wav -segment_time ${RECORDING_LENGTH} -strftime 1 ${RECS_DIR}/StreamData/%F-birdnet-RTSP_${3}-%H:%M:%S.wav
+    if ! ffmpeg -hide_banner -loglevel $LOGGING_LEVEL -nostdin ${1} -i ${2} -vn -map a:0 "${filter_args[@]}" -acodec pcm_s16le -ac 2 -ar 48000 -f segment -segment_format wav -segment_time ${RECORDING_LENGTH} -strftime 1 ${RECS_DIR}/StreamData/%F-birdnet-RTSP_${3}-%H:%M:%S.wav
     then
       sleep 1
     fi
   done
+}
+
+record_filtered_alsa(){
+  local input="${1:-default}"
+  local filter
+  filter="$(audio_filter_chain)"
+  local filter_args=()
+  if [ -n "$filter" ];then
+    filter_args=(-af "$filter")
+  fi
+  ffmpeg -hide_banner -loglevel "$LOGGING_LEVEL" -nostdin -f alsa -ac "${CHANNELS}" -i "$input" -vn -map a:0 "${filter_args[@]}" \
+    -acodec pcm_s16le -ac "${CHANNELS}" -ar 48000 -f segment -segment_format wav -segment_time "${RECORDING_LENGTH}" \
+    -strftime 1 "${RECS_DIR}/StreamData/%F-birdnet-%H:%M:%S.wav"
 }
 
 # Read the logging level from the configuration option
@@ -51,11 +87,19 @@ else
     echo "Recording"
   else
     if [ -z ${REC_CARD} ];then
-      arecord -f S16_LE -c${CHANNELS} -r48000 -t wav --max-file-time ${RECORDING_LENGTH}\
+      if [ "${AV_AUDIO_FILTER:-0}" = "1" ];then
+        record_filtered_alsa "default"
+      else
+        arecord -f S16_LE -c${CHANNELS} -r48000 -t wav --max-file-time ${RECORDING_LENGTH}\
 	      	      	       --use-strftime ${RECS_DIR}/StreamData/%F-birdnet-%H:%M:%S.wav
+      fi
     else
-      arecord -f S16_LE -c${CHANNELS} -r48000 -t wav --max-file-time ${RECORDING_LENGTH}\
-        -D "${REC_CARD}" --use-strftime ${RECS_DIR}/StreamData/%F-birdnet-%H:%M:%S.wav
+      if [ "${AV_AUDIO_FILTER:-0}" = "1" ];then
+        record_filtered_alsa "${REC_CARD}"
+      else
+        arecord -f S16_LE -c${CHANNELS} -r48000 -t wav --max-file-time ${RECORDING_LENGTH}\
+          -D "${REC_CARD}" --use-strftime ${RECS_DIR}/StreamData/%F-birdnet-%H:%M:%S.wav
+      fi
     fi
   fi
 fi

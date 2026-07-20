@@ -182,6 +182,8 @@ install_Caddyfile() {
   cat << EOF > /etc/caddy/Caddyfile
 http:// ${BIRDNETPI_URL} {
   root * ${EXTRACTED}
+  @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
+  header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
   handle /By_Date/* {
     file_server browse
@@ -218,6 +220,8 @@ EOF
     cat << EOF > /etc/caddy/Caddyfile
 http:// ${BIRDNETPI_URL} {
   root * ${EXTRACTED}
+  @avian_app_shell path /avian/frontend/index.html /avian/frontend/apt.js /avian/frontend/styles.css
+  header @avian_app_shell Cache-Control "no-cache, no-store, must-revalidate"
   file_server browse
   handle /By_Date/* {
     file_server browse
@@ -238,13 +242,6 @@ EOF
   usermod -aG $USER caddy
   usermod -aG video caddy
   chmod g+r+x $HOME
-
-  # Serve the AvianVisitors collage at / rather than the stock BirdNET-Pi UI.
-  # The Caddyfile written above is the stock one (hardcoded php-fpm.sock, no
-  # index.html try_files override); re-apply both through update_caddyfile.sh,
-  # the single source of truth, so / serves index.html not index.php. Run it
-  # last so it wins.
-  "$HOME/BirdNET-Pi/scripts/update_caddyfile.sh"
 }
 
 install_avahi_aliases() {
@@ -384,6 +381,7 @@ caddy ALL=(root) NOPASSWD: \\
     /bin/systemctl restart livestream, \\
     /bin/systemctl restart icecast2, \\
     /bin/systemctl restart caddy, \\
+    /usr/bin/systemd-run --unit=avian-ui-reboot --on-active=5 /bin/systemctl reboot, \\
     /bin/journalctl -u birdnet_recording *, \\
     /bin/journalctl -u birdnet_analysis *, \\
     /bin/journalctl -u birdnet_log *, \\
